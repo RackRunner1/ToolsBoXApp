@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Build x64 autoportant : pas besoin d'installer le runtime .NET sur le PC cible -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+
+    <!-- La CI surcharge avec /p:Version=1.0.AA.JJJ (incrémenté chaque jour) -->
+    <Version>1.0.0.0</Version>
+    <AssemblyVersion>$(Version)</AssemblyVersion>
+    <FileVersion>$(Version)</FileVersion>
+
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.44" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Le contenu du site (synchro quotidienne depuis ToolsBoXMachine) est embarqué
+      dans le package MSIX. Il est copié dans le dossier de sortie sous contents\
+      puis empaqueté par ToolsBoXApp.Package.
+    -->
+    <Content Include="$(MSBuildThisFileDirectory)..\..\contents\**\*">
+      <Link>contents\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+    </Content>
+  </ItemGroup>
+
+</Project>

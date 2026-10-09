@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Windows Application Packaging Project :
+    produit ToolsBoXApp_x64.msix (signé) à partir de src/ToolsBoXApp.
+  -->
+  <PropertyGroup>
+    <OutputType>AppContainerExe</OutputType>
+    <TargetPlatformVersion>10.0.19041.0</TargetPlatformVersion>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+
+    <DefaultLanguage>en-US</DefaultLanguage>
+
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <GenerateAppxPackageOnBuild>true</GenerateAppxPackageOnBuild>
+
+    <!-- Le .appinstaller est généré à part par la CI (URIs stables vers les releases GitHub) -->
+    <GenerateAppInstallerFile>false</GenerateAppInstallerFile>
+    <GenerateTemporaryStoreCertificate>false</GenerateTemporaryStoreCertificate>
+    <AppxSymbolPackageEnabled>false</AppxSymbolPackageEnabled>
+
+    <!-- Signature : la CI passe /p:SignCertPath + /p:SignCertPassword -->
+    <AppxPackageSigningEnabled Condition="'$(SignCertPath)' != ''">true</AppxPackageSigningEnabled>
+    <PackageCertificateKeyFile Condition="'$(SignCertPath)' != ''">$(SignCertPath)</PackageCertificateKeyFile>
+    <PackageCertificatePassword Condition="'$(SignCertPassword)' != ''">$(SignCertPassword)</PackageCertificatePassword>
+
+    <!-- Sortie du msix : src/ToolsBoXApp.Package/AppX/ -->
+    <AppxPackageDir>$(MSBuildThisFileDirectory)AppX\</AppxPackageDir>
+
+    <!-- Version injectée par la CI : /p:Version=1.0.AA.JJJ -->
+    <Version Condition="'$(Version)' == ''">1.0.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ToolsBoXApp\ToolsBoXApp.csproj" />
+  </ItemGroup>
+
+</Project>

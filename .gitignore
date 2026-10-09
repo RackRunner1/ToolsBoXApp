@@ -1,0 +1,19 @@
+# ---- Build ----
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
+AppX/
+AppPackages/
+*.appxsym*
+*.msix.upload
+*.msix.encrypted
+*.wapproj.user
+
+# ---- Certificats : ne JAMAIS committer de clé privée ----
+certs/*
+!certs/.gitkeep
+
+# ---- Divers ----
+*.log

@@ -1,0 +1,385 @@
+# =============================================================================
+#  ToolsBoXApp — Build quotidien & release
+#
+#  Tous les jours à MINUIT UTC :
+#    1. synchronise contents/ avec le code du site ToolsBoXMachine
+#    2. commit & push contents/ sur la branche
+#    3. compile + signe le package MSIX (ToolsBoXApp_x64.msix)
+#    4. génère le .appinstaller (mises à jour automatiques)
+#    5. publie une release YYYYMMDD avec le .msix, le .appinstaller,
+#       le certificat public et le script d'installation
+#
+#  Sur les pull_request : compile seulement (pas de synchro, pas de release).
+# =============================================================================
+
+name: Daily Build & Release
+
+on:
+  schedule:
+    - cron: "0 0 * * *"          # minuit UTC (GitHub Actions n'accepte que l'UTC)
+  workflow_dispatch:
+    inputs:
+      do_release:
+        description: "Créer / mettre à jour la release GitHub (YYYYMMDD)"
+        type: boolean
+        default: true
+      do_sync:
+        description: "Synchroniser contents/ depuis ToolsBoXMachine"
+        type: boolean
+        default: true
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "scripts/**"
+      - "install-app.ps1"
+      - ".github/workflows/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      # --------------------------------------------------------------- checkout
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 1
+
+      # ------------------------------------------------- date / version / flags
+      # Version MSIX = 1.0.AA.JJJ (AA = année-2000, JJJ = jour de l'année UTC)
+      # -> strictement croissante d'un jour à l'autre => les mises à jour
+      #    automatiques via .appinstaller fonctionnent.
+      - name: Calculer date, version et options
+        id: vars
+        shell: pwsh
+        run: |
+          $d = [DateTime]::UtcNow
+          $version = "1.0.$($d.Year - 2000).$($d.DayOfYear)"
+          $tag     = $d.ToString('yyyyMMdd')
+
+          $doSync = $false; $doRelease = $false
+          switch ($env:GITHUB_EVENT_NAME) {
+            'schedule'          { $doSync = $true;  $doRelease = $true  }
+            'push'              { $doSync = $true;  $doRelease = $true  }
+            'pull_request'      { $doSync = $false; $doRelease = $false }
+            'workflow_dispatch' {
+              $doSync    = "${{ inputs.do_sync }}"    -ne 'false'
+              $doRelease = "${{ inputs.do_release }}" -ne 'false'
+            }
+            default             { throw "Événement inattendu : $env:GITHUB_EVENT_NAME" }
+          }
+
+          "version=$version"   >> $env:GITHUB_OUTPUT
+          "tag=$tag"           >> $env:GITHUB_OUTPUT
+          "do_sync=$($doSync.ToString().ToLower())"     >> $env:GITHUB_OUTPUT
+          "do_release=$($doRelease.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          Write-Host "tag=$tag version=$version sync=$doSync release=$doRelease"
+
+      # --------------------------------------------- synchro du contenu du site
+      - name: Synchroniser contents/ depuis ToolsBoXMachine
+        if: steps.vars.outputs.do_sync == 'true'
+        shell: pwsh
+        run: .\scripts\sync-contents.ps1
+
+      # --------------------------------------------------- commit & push (main)
+      - name: Commit & push contents/
+        if: steps.vars.outputs.do_sync == 'true'
+        shell: pwsh
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A contents
+          if ($LASTEXITCODE -ne 0) { throw "git add a échoué" }
+          if (git diff --cached --quiet; $LASTEXITCODE -eq 0) {
+            Write-Host "Aucun changement dans contents/ (source inchangée)."
+          } else {
+            git commit -m "chore(contents): synchro ToolsBoXMachine ${{ steps.vars.outputs.tag }}" | Out-Null
+            try { git push }
+            catch {
+              Write-Warning "Push refusé, tentative de rebase puis nouvelle tentative."
+              git pull --rebase
+              git push
+            }
+            if ($LASTEXITCODE -ne 0) { throw "git push a échoué" }
+          }
+
+      # -------------------------------------------- certificat de signature MSIX
+      # Par défaut : certificat auto-signé généré à la volée (mode ephemeral).
+      # Pour des mises à jour fiables, configurez les secrets du repo :
+      #   CERT_BASE64 = base64 du fichier .pfx   →  voir README
+      #   CERT_PASSWORD = mot de passe du .pfx
+      - name: Préparer le certificat de signature
+        id: cert
+        shell: pwsh
+        env:
+          CERT_BASE64: ${{ secrets.CERT_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
+        run: |
+          New-Item -ItemType Directory -Path certs -Force | Out-Null
+          $pfx = Join-Path (Get-Location) "certs\ToolsBoXApp.pfx"
+
+          if ($env:CERT_BASE64) {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_BASE64))
+            $pass = $env:CERT_PASSWORD
+            $mode = "stable"
+            Write-Host "Certificat : secret CERT_BASE64 (stable)."
+          } else {
+            Write-Warning "Secret CERT_BASE64 absent -> certificat auto-signé ÉPHÉMÈRE." +
+              "Les mises à jour auto (.appinstaller) ne seront pas fiables d'un jour à l'autre." +
+              "Voir README (section « Certificat de signature »)."
+            $c = New-SelfSignedCertificate `
+                   -Type CodeSigningCert `
+                   -Subject "CN=RackRunner" `
+                   -CertStoreLocation "Cert:\CurrentUser\My" `
+                   -KeyUsage DigitalSignature `
+                   -FriendlyName "ToolsBoXApp" `
+                   -HashAlgorithm SHA256 `
+                   -NotAfter (Get-Date).AddYears(5)
+            $pass = [Guid]::NewGuid().ToString('N')
+            Export-PfxCertificate -Cert $c -FilePath $pfx -Password (ConvertTo-SecureString $pass -AsPlainText -Force) | Out-Null
+            $mode = "ephemeral"
+          }
+
+          Write-Output "::add-mask::$pass"
+          "PFX_PATH=$pfx"   >> $env:GITHUB_ENV
+          "PFX_PASS=$pass"  >> $env:GITHUB_ENV
+          "PFX_MODE=$mode"  >> $env:GITHUB_ENV
+          "mode=$mode"      >> $env:GITHUB_OUTPUT
+
+          # Certificat public (.cer) joint à la release pour l'installation
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfx, $pass)
+          Write-Host "Sujet du certificat : $($cert.Subject)"
+          $cerBytes = $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+          [IO.File]::WriteAllBytes("$pwd\artifacts\ToolsBoXApp.cer", $cerBytes)
+
+          if ($cert.Subject -ne "CN=RackRunner") {
+            Write-Warning "Le sujet du certificat ($($cert.Subject)) ne correspond pas au Publisher du manifeste (CN=RackRunner)."
+          }
+
+      # ------------------------------------------------------ version du manifeste
+      - name: Injecter la version dans Package.appxmanifest
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.vars.outputs.version }}"
+          $m = "src\ToolsBoXApp.Package\Package.appxmanifest"
+          $xml = [IO.File]::ReadAllText($m)
+          $new = [regex]::Replace(
+            $xml,
+            '(<Identity\b[^>]*?Version=")\d+\.\d+\.\d+\.\d+(")',
+            { param($g) $g.Groups[1].Value + $ver + $g.Groups[2].Value },
+            'Singleline')
+          if ($new -eq $xml) { throw "Impossible d'injecter la version $ver dans $m" }
+          [IO.File]::WriteAllText($m, $new)
+          Write-Host "Manifeste versionné : $ver"
+
+      # ------------------------------------------------------------ msbuild
+      - name: Localiser MSBuild
+        id: msb
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) { throw "vswhere introuvable" }
+          $msbuild = & $vswhere -latest -requires Microsoft.Component.MSBuild -find "MSBuild\**\Bin\MSBuild.exe" | Select-Object -First 1
+          if (-not $msbuild) { throw "MSBuild introuvable sur le runner" }
+          "path=$msbuild" >> $env:GITHUB_OUTPUT
+          Write-Host "MSBuild : $msbuild"
+
+      - name: Compiler et signer le package MSIX (x64)
+        shell: pwsh
+        env:
+          PFX_PATH: ${{ env.PFX_PATH }}
+          PFX_PASS: ${{ env.PFX_PASS }}
+        run: |
+          & "${{ steps.msb.outputs.path }}" "src\ToolsBoXApp.Package\ToolsBoXApp.Package.wapproj" `
+            /t:Restore,Build `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:Version="${{ steps.vars.outputs.version }}" `
+            /p:SignCertPath="$env:PFX_PATH" `
+            /p:SignCertPassword="$env:PFX_PASS" `
+            /m
+          if ($LASTEXITCODE -ne 0) { throw "msbuild a échoué (code $LASTEXITCODE)" }
+
+      # --------------------------------------------------------- vérifications
+      - name: Vérifier le package produit
+        shell: pwsh
+        run: |
+          $msix = Get-ChildItem -Path "src\ToolsBoXApp.Package\AppX" -Filter "ToolsBoXApp_x64.msix" -Recurse |
+                  Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $msix) { throw "MSIX introuvable dans src\ToolsBoXApp.Package\AppX" }
+          Write-Host "MSIX : $($msix.FullName) ($([int]($msix.Length/1MB)) Mo)"
+          "MSIX_PATH=$($msix.FullName)" >> $env:GITHUB_ENV
+
+          # 1) Signature Authenticode
+          $sig = Get-AuthenticodeSignature $msix.FullName
+          Write-Host "Signature : $($sig.Status) — $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -in @('NotSigned','HashMismatch','NotTrustedFile')) {
+            throw "Signature du MSIX invalide : $($sig.Status)"
+          }
+          if ($sig.Status -ne 'Valid') {
+            Write-Warning "Certificat non encore approuvé par cette machine ($($sig.Status))." +
+              "Les utilisateurs devront installer ToolsBoXApp.cer une fois (Trusted People)."
+          }
+
+          # 2) Contenu embarqué + métadonnées lues dans le manifeste du paquet
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [IO.Compression.ZipFile]::OpenRead($msix.FullName)
+          try {
+            $names = $zip.Entries | ForEach-Object { $_.FullName }
+            foreach ($need in @('AppxManifest.xml','ToolsBoXApp.exe','contents/index.html')) {
+              if ($names -notcontains $need) {
+                throw "Fichier manquant dans le MSIX : $need (le contenu synchro n'est pas embarqué ?)"
+              }
+            }
+            $entry = $zip.Entries | Where-Object { $_.FullName -eq 'AppxManifest.xml' }
+            $sr = New-Object IO.StreamReader($entry.Open(), [Text.Encoding]::UTF8)
+            $manifestXml = $sr.ReadToEnd(); $sr.Close()
+
+            [xml]$mx = $manifestXml
+            $ns = New-Object System.Xml.XmlNamespaceManager($mx.NameTable)
+            $ns.AddNamespace('m','http://schemas.microsoft.com/appx/manifest/foundation/windows10')
+            $id = $mx.SelectSingleNode('//m:Identity', $ns)
+            "PKG_NAME=$($id.Name)"                 >> $env:GITHUB_ENV
+            "PKG_PUBLISHER=$($id.Publisher)"       >> $env:GITHUB_ENV
+            "PKG_VERSION=$($id.Version)"           >> $env:GITHUB_ENV
+            "PKG_ARCH=$($id.ProcessorArchitecture)" >> $env:GITHUB_ENV
+            Write-Host "Identité : $($id.Name) / $($id.Publisher) / $($id.Version) / $($id.ProcessorArchitecture)"
+
+            $depNodes = $mx.SelectNodes('//m:Dependencies/m:Package', $ns)
+            $deps = @()
+            foreach ($dn in $depNodes) { $deps += $dn.OuterXml }
+            "PKG_DEPS=$($deps -join ' ')" >> $env:GITHUB_ENV
+          } finally { $zip.Dispose() }
+
+          # 3) Cohérence de version
+          if ($env:PKG_VERSION -ne "${{ steps.vars.outputs.version }}") {
+            throw "Version du paquet ($env:PKG_VERSION) différente de la version attendue (${{ steps.vars.outputs.version }})."
+          }
+
+      # ------------------------------------------------- génération .appinstaller
+      - name: Générer le .appinstaller
+        shell: pwsh
+        run: |
+          $base    = "https://github.com/${{ github.repository }}/releases/latest/download"
+          $version = "${{ steps.vars.outputs.version }}"
+
+          $xml = @"
+<?xml version="1.0" encoding="utf-8"?>
+<AppInstaller xmlns="http://schemas.microsoft.com/appx/appinstaller/2017/2"
+              xmlns:s4="http://schemas.microsoft.com/appx/appinstaller/2021"
+              Uri="$base/ToolsBoXApp.appinstaller"
+              Version="$version">
+  <!-- Vérification des mises à jour à chaque lancement, sans bloquer l'app -->
+  <UpdateSettings OnLaunch="true"
+                  HoursBetweenUpdateChecks="0"
+                  ShowPrompt="true"
+                  UpdateBlocksActivation="false"
+                  s4:ForceUpdateFromAnyVersion="false" />
+  <MainPackage Name="$env:PKG_NAME"
+               Publisher="$env:PKG_PUBLISHER"
+               Version="$version"
+               ProcessorArchitecture="x64"
+               Uri="$base/ToolsBoXApp_x64.msix" />
+</AppInstaller>
+"@
+          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          [IO.File]::WriteAllText("$pwd\artifacts\ToolsBoXApp.appinstaller", $xml)
+
+          # checksums
+          $sums = foreach ($f in @("$env:MSIX_PATH", "$pwd\artifacts\ToolsBoXApp.appinstaller", "$pwd\artifacts\ToolsBoXApp.cer")) {
+            $h = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
+            "{0}  {1}" -f $h, (Split-Path $f -Leaf)
+          }
+          [IO.File]::WriteAllLines("$pwd\artifacts\checksums.txt", $sums)
+
+          Get-Content "$pwd\artifacts\ToolsBoXApp.appinstaller" | Write-Host
+
+      # ---------------------------------------------------- notes de la release
+      - name: Préparer les notes de release
+        id: notes
+        if: steps.vars.outputs.do_release == 'true'
+        shell: pwsh
+        run: |
+          $tag  = "${{ steps.vars.outputs.tag }}"
+          $ver  = "${{ steps.vars.outputs.version }}"
+          $base = "https://github.com/${{ github.repository }}/releases/latest/download"
+
+          $src = "inconnu"
+          $sf = Join-Path $pwd "contents\.sync-info.json"
+          if (Test-Path $sf) {
+            try {
+              $j = Get-Content $sf -Raw | ConvertFrom-Json
+              $sha = if ($j.sourceSha.Length -ge 7) { $j.sourceSha.Substring(0,7) } else { $j.sourceSha }
+              $src = "$($j.source) @ $sha (synchronisé le $($j.syncedAtUtc))"
+            } catch {}
+          }
+
+          if ("$env:PFX_MODE" -eq 'ephemeral') {
+            $certNote = @"
+> ⚠️ **Build signé avec un certificat auto-signé éphémère.**
+> Installez d'abord ``ToolsBoXApp.cer`` (double-clic → Ordinateur local → *Trusted People*),
+> puis le ``.appinstaller``. Les mises à jour automatiques deviennent fiables dès que les
+> secrets ``CERT_BASE64`` / ``CERT_PASSWORD`` sont configurés (voir le README du dépôt).
+"@
+          } else {
+            $certNote = "🔏 Signature : certificat ``ToolsBoXApp.cer`` (à installer une fois dans *Trusted People*)."
+          }
+
+          $body = @"
+## 🪟 Build $tag
+
+| | |
+|---|---|
+| **Version du paquet** | ``$ver`` |
+| **Contenu** | $src |
+| **Fichier d'installation** | [``ToolsBoXApp.appinstaller``]($base/ToolsBoXApp.appinstaller) |
+
+### Installation
+- **Automatique (recommandé)** — PowerShell :
+  ```powershell
+  irm $base/install-app.ps1 | iex
+  ```
+- **Manuelle** — installez ``ToolsBoXApp.cer`` (double-clic → *Ordinateur local* → **Trusted People**),
+  puis téléchargez et double-cliquez ``ToolsBoXApp.appinstaller``.
+
+### Mises à jour
+Une fois installée, l'app se met à jour automatiquement au lancement lorsque ce
+build est le plus récent.
+
+$certNote
+
+### Sommes de contrôle (SHA256)
+```
+$(Get-Content "$pwd\artifacts\checksums.txt" -Raw)
+```
+"@
+          "body<<RELEASE_NOTES_EOF" >> $env:GITHUB_OUTPUT
+          $body >> $env:GITHUB_OUTPUT
+          "RELEASE_NOTES_EOF" >> $env:GITHUB_OUTPUT
+
+      # ------------------------------------------------------- publication
+      - name: Publier la release ${{ steps.vars.outputs.tag }}
+        if: steps.vars.outputs.do_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: Build ${{ steps.vars.outputs.tag }}
+          body: ${{ steps.notes.outputs.body }}
+          make_latest: true
+          fail_on_unmatched_files: false
+          files: |
+            ${{ env.MSIX_PATH }}
+            artifacts/ToolsBoXApp.appinstaller
+            artifacts/ToolsBoXApp.cer
+            artifacts/checksums.txt
+            install-app.ps1

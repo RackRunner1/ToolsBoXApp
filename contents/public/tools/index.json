@@ -1,0 +1,91 @@
+{
+  "name": "ToolsBoXMachine",
+  "shortName": "TBXM",
+  "description": "A collection of free, privacy-first browser tools for everyday tasks.",
+  "url": "https://www.tbxm.org",
+  "maintainer": "RackRunner",
+  "repository": "https://github.com/RackRunner1/ToolsBoXMachine",
+  "license": "Unlicense",
+  "tools": [
+    {
+      "id": "blur",
+      "name": "Blur Image",
+      "emoji": "🎨",
+      "description": "Protect privacy by blurring sensitive parts of images",
+      "url": "/tools/blur/blur.html",
+      "category": "image",
+      "clientSide": true,
+      "keywords": ["image", "blur", "privacy", "censor", "pixelate"]
+    },
+    {
+      "id": "calculator",
+      "name": "Calculator",
+      "emoji": "🧮",
+      "description": "Perform basic arithmetic calculations",
+      "url": "/tools/calculator/calculator.html",
+      "category": "productivity",
+      "clientSide": true,
+      "keywords": ["math", "calculate", "arithmetic", "numbers"]
+    },
+    {
+      "id": "password",
+      "name": "Password Generator",
+      "emoji": "🔐",
+      "description": "Generate secure passwords or passphrases",
+      "url": "/tools/password-gen/password-gen.html",
+      "category": "security",
+      "clientSide": true,
+      "keywords": ["password", "security", "generate", "passphrase", "random"]
+    },
+    {
+      "id": "qr",
+      "name": "QR Code Generator",
+      "emoji": "📱",
+      "description": "Create custom QR codes for any link or text",
+      "url": "/tools/qr-gen/qr-gen.html",
+      "category": "utility",
+      "clientSide": true,
+      "keywords": ["qr", "code", "barcode", "scan", "link"]
+    },
+    {
+      "id": "timer",
+      "name": "Pomodoro Timer",
+      "emoji": "⏱️",
+      "description": "Stay focused with timed work sessions",
+      "url": "/tools/timer/timer.html",
+      "category": "productivity",
+      "clientSide": true,
+      "keywords": ["timer", "pomodoro", "focus", "productivity", "clock"]
+    },
+    {
+      "id": "emoji",
+      "name": "Emoji Keyboard",
+      "emoji": "😀",
+      "description": "Browse and copy emojis with one click",
+      "url": "/tools/emoji-keyboard/emoji-keyboard.html",
+      "category": "utility",
+      "clientSide": true,
+      "keywords": ["emoji", "emoticon", "copy", "paste", "keyboard"]
+    },
+    {
+      "id": "note",
+      "name": "Notes",
+      "emoji": "📝",
+      "description": "Create, save, and manage notes",
+      "url": "/tools/note/note.html",
+      "category": "productivity",
+      "clientSide": true,
+      "keywords": ["note", "text", "write", "save", "diary"]
+    },
+    {
+      "id": "clock",
+      "name": "Clock",
+      "emoji": "🕐",
+      "description": "A customizable clock with analog and digital display",
+      "url": "/tools/clock/clock.html",
+      "category": "productivity",
+      "clientSide": true,
+      "keywords": ["clock", "time", "analog", "digital", "timezone", "world clock"]
+    }
+  ]
+}
