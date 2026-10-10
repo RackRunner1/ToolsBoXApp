@@ -99,6 +99,9 @@ try {
         $dst = Join-Path $Dest $d
         $null = robocopy $s $dst /MIR /NFL /NDL /NJH /NJS /NP /XF .gitkeep
         if ($LASTEXITCODE -ge 8) { throw "robocopy a échoué sur '$d' (code $LASTEXITCODE)" }
+        # robocopy renvoie 1 à 7 en cas de succès (fichiers copiés) : on
+        # remet le code à 0, sinon l'étape CI est marquée en échec.
+        $global:LASTEXITCODE = 0
     }
 
     # -----------------------------------------------------------------------
@@ -129,6 +132,9 @@ try {
 
     $fileCount = (Get-ChildItem $Dest -Recurse -File -Force).Count
     Write-Host "OK : contents/ synchronisé ($fileCount fichiers, source @ $sha)"
+    # Garde-fou : s'assurer que le script se termine avec un code 0
+    # (aucune commande native ne doit laisser un $LASTEXITCODE non nul).
+    $global:LASTEXITCODE = 0
 }
 finally {
     if ($tmp -and -not $KeepClone) {

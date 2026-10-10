@@ -43,6 +43,9 @@ New-Item -ItemType Directory -Path $WebDir -Force | Out-Null
 
 $null = robocopy $ContentsDir $WebDir /E /NFL /NDL /NJH /NJS /NP
 if ($LASTEXITCODE -ge 8) { throw "robocopy a échoué (code $LASTEXITCODE)" }
+# robocopy renvoie 1 à 7 en cas de succès (fichiers copiés) : on remet le
+# code à 0, sinon l'étape CI est marquée en échec.
+$global:LASTEXITCODE = 0
 
 # ---------------------------------------------------------------------------
 # Vérifications minimales
@@ -54,3 +57,5 @@ foreach ($f in @('index.html', 'style.css')) {
 $files = Get-ChildItem $WebDir -Recurse -File -Force
 $sizeMb = [math]::Round((($files | Measure-Object Length -Sum).Sum / 1MB), 2)
 Write-Host "OK : app/web/ prêt ($($files.Count) fichiers, $sizeMb Mo) - embed dans le binaire au build"
+# Garde-fou : s'assurer que le script se termine avec un code 0.
+$global:LASTEXITCODE = 0
