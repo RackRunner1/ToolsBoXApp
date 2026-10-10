@@ -1,0 +1,16 @@
+[package]
+name = "tbxa"
+version = "0.1.0"
+description = "Terminal companion for ToolsBoXApp: update and uninstall commands"
+authors = ["RackRunner"]
+license = "Unlicense"
+repository = "https://github.com/RackRunner1/ToolsBoXApp"
+edition = "2021"
+rust-version = "1.77.2"
+
+# Standalone project: this crate is its own workspace root.
+[workspace]
+
+[profile.release]
+strip = true
+lto = true

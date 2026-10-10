@@ -3,8 +3,10 @@
 //! - `save_download`: intercepts clicks on `<a download>` (pages generate
 //!   blobs: QR codes, blurred images...) and saves them through the native
 //!   dialog, as the WebView cannot handle downloads.
-//! - `reveal_file`: opens Explorer on a saved file.
-//! - `open_external`: opens an http(s)/mailto link in the system browser.
+//! - `reveal_file`: opens the file manager on the folder containing a saved file.
+//! - `open_external`: opens an http(s)/mailto link in the default browser.
+//!
+//! Linux-only build.
 
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
@@ -100,32 +102,29 @@ pub async fn save_download(
     Ok(saved)
 }
 
-/// Opens Windows Explorer with the file selected.
+/// Opens the file manager on the folder containing the file.
 #[tauri::command]
 pub fn reveal_file(path: String) -> Result<(), String> {
     let target = std::path::PathBuf::from(&path);
     if !target.is_file() {
         return Err(format!("file not found: {path}"));
     }
+    let folder = target
+        .parent()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(|| std::path::PathBuf::from("/"));
 
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // CREATE_NO_WINDOW: no flashing console window.
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        std::process::Command::new("explorer.exe")
-            .raw_arg(format!("/select,\"{path}\""))
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|error| format!("explorer: {error}"))?;
-    }
-
-    #[cfg(not(windows))]
-    {
-        let _ = &target;
-        return Err("reveal_file is only available on Windows".to_string());
-    }
-
+    std::process::Command::new("xdg-open")
+        .arg(&folder)
+        .spawn()
+        .map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                "xdg-open not found.".to_string()
+            }
+            else {
+                format!("cannot open file manager: {error}")
+            }
+        })?;
     Ok(())
 }
 

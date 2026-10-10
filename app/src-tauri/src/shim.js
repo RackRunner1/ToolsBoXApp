@@ -7,8 +7,9 @@
  *   2. External links: opened in the system browser, never inside the app.
  *   3. Clipboard: fallback through `execCommand('copy')` when the modern
  *      API fails.
- *   4. Updates: checks the latest GitHub release on startup (at most once
- *      every 6 h) + "Update" banner.
+ *
+ * Updates are handled outside the app through the `tbxa` terminal command
+ * (`tbxa update` / `tbxa uninstall`).
  *
  * The shim is re-injected on every navigation: it is idempotent per document.
  */
@@ -65,19 +66,7 @@
     '  box-shadow:0 8px 24px #0006;backdrop-filter:blur(4px);}',
     '[data-tbx-toast] button{all:unset;cursor:pointer;padding:4px 10px;border-radius:6px;',
     '  background:#2563eb;color:#fff;font-size:12px;font-weight:600;white-space:nowrap;}',
-    '[data-tbx-toast] button:hover{background:#1d4ed8;}',
-    '[data-tbx-update]{position:fixed;right:16px;bottom:16px;z-index:2147483647;',
-    '  display:flex;flex-direction:column;gap:10px;max-width:340px;padding:14px 16px;',
-    '  border-radius:12px;background:#0f172af5;color:#e2e8f0;font-size:13px;line-height:1.45;',
-    '  box-shadow:0 12px 32px #00000073;border:1px solid #2563eb66;}',
-    '[data-tbx-update] strong{color:#fff;font-size:14px;}',
-    '[data-tbx-update] .tbx-actions{display:flex;gap:8px;justify-content:flex-end;}',
-    '[data-tbx-update] button{all:unset;cursor:pointer;padding:6px 12px;border-radius:7px;',
-    '  font-size:12px;font-weight:600;}',
-    '[data-tbx-update] .tbx-primary{background:#2563eb;color:#fff;}',
-    '[data-tbx-update] .tbx-primary:hover{background:#1d4ed8;}',
-    '[data-tbx-update] .tbx-ghost{color:#94a3b8;}',
-    '[data-tbx-update] .tbx-ghost:hover{color:#e2e8f0;}'
+    '[data-tbx-toast] button:hover{background:#1d4ed8;}'
   ].join('\n');
 
   function injectStyles() {
@@ -128,118 +117,6 @@
 
     document.body.appendChild(box);
     timer = window.setTimeout(close, typeof ttl === 'number' ? ttl : 7000);
-  }
-
-  function eventApi() {
-    var global = window.__TAURI__;
-    if (global && global.event && typeof global.event.listen === 'function') {
-      return global.event;
-    }
-    return null;
-  }
-
-  function showUpdateBanner(info) {
-    if (!document.body || document.querySelector('[data-tbx-update]')) {
-      return;
-    }
-
-    var box = document.createElement('div');
-    box.setAttribute('data-tbx-ui', '');
-    box.setAttribute('data-tbx-update', '');
-
-    var title = document.createElement('strong');
-    title.textContent = 'Update available';
-    box.appendChild(title);
-
-    var line = document.createElement('span');
-    line.textContent = 'Version ' + (info.latestVersion || '?')
-      + ' (current: ' + (info.currentVersion || '?') + ')';
-    box.appendChild(line);
-
-    var actions = document.createElement('div');
-    actions.className = 'tbx-actions';
-
-    var later = document.createElement('button');
-    later.type = 'button';
-    later.className = 'tbx-ghost';
-    later.textContent = 'Later';
-    later.addEventListener('click', function () {
-      try {
-        window.localStorage.setItem(STORAGE_SKIPPED, new Date().toDateString());
-      }
-      catch (error) { /* storage unavailable */ }
-      if (box.parentNode) {
-        box.parentNode.removeChild(box);
-      }
-    });
-
-    var update = document.createElement('button');
-    update.type = 'button';
-    update.className = 'tbx-primary';
-    update.textContent = 'Update';
-    update.addEventListener('click', function () {
-      update.disabled = true;
-      startUpdate(update, info);
-    });
-
-    actions.appendChild(later);
-    actions.appendChild(update);
-    box.appendChild(actions);
-    document.body.appendChild(box);
-
-    log('update available:', info.latestVersion, '->', info.downloadUrl || info.releaseUrl);
-  }
-
-  /* Downloads, verifies and installs the update in place (the app exits
-   * once the installer takes over and restarts the app itself). */
-  function startUpdate(updateButton, info) {
-    updateButton.textContent = 'Downloading 0%';
-
-    var events = eventApi();
-    var unlisten = null;
-    function stopListening() {
-      if (typeof unlisten === 'function') {
-        try {
-          unlisten();
-        }
-        catch (error) { /* ignored */ }
-        unlisten = null;
-      }
-    }
-
-    if (events) {
-      events.listen('tbx-update-progress', function (event) {
-        var progress = (event && event.payload) || {};
-        if (typeof progress.downloaded === 'number'
-          && typeof progress.total === 'number'
-          && progress.total > 0) {
-          if (progress.downloaded >= progress.total) {
-            updateButton.textContent = 'Installing...';
-          }
-          else {
-            updateButton.textContent = 'Downloading '
-              + Math.floor((progress.downloaded / progress.total) * 100) + '%';
-          }
-        }
-      }).then(function (fn) {
-        unlisten = fn;
-      }).catch(function () { /* progress display is best-effort */ });
-    }
-
-    invoke('apply_update').then(function () {
-      // Rarely reached: the app usually exits during install.
-      updateButton.textContent = 'Installing...';
-    }).catch(function (error) {
-      stopListening();
-      log('apply_update failed:', error);
-      updateButton.disabled = false;
-      updateButton.textContent = 'Update';
-      toast('Update failed. You can still install it manually.', 'Open releases', function () {
-        invoke('open_external', { url: info.releaseUrl }).catch(function (openError) {
-          log('open_external failed:', openError);
-        });
-      });
-    });
   }
 
   /* ------------------------------------------------------------------ *
@@ -443,51 +320,6 @@
   }
 
   /* ------------------------------------------------------------------ *
-   *  6. Update checks
-   * ------------------------------------------------------------------ */
-  var STORAGE_KEY = 'toolbox.update.lastCheck';
-  var STORAGE_SKIPPED = 'toolbox.update.skipped';
-  var CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
-
-  function checkForUpdate() {
-    var now = Date.now();
-    var last = 0;
-    try {
-      last = parseInt(window.localStorage.getItem(STORAGE_KEY) || '0', 10) || 0;
-      if (window.localStorage.getItem(STORAGE_SKIPPED) === String(new Date().toDateString())) {
-        return;
-      }
-    }
-    catch (error) {
-      return;
-    }
-
-    if (now - last < CHECK_INTERVAL_MS) {
-      return;
-    }
-    try {
-      window.localStorage.setItem(STORAGE_KEY, String(now));
-    }
-    catch (error) { /* storage unavailable: carry on */ }
-
-    invoke('check_update')
-      .then(function (info) {
-        if (!info) {
-          return;
-        }
-        if (info.error) {
-          log('check_update:', info.error);
-        }
-        if (info.available) {
-          showUpdateBanner(info);
-        }
-      })
-      .catch(function (error) {
-        log('check_update failed:', error);
-      });
-  }
-
-  /* ------------------------------------------------------------------ *
    *  Bootstrap
    * ------------------------------------------------------------------ */
   function boot() {
@@ -495,7 +327,6 @@
     patchClipboard();
     patchWindowOpen();
     document.addEventListener('click', onClick, true);
-    checkForUpdate();
     log('shim active on', window.location.pathname);
   }
 

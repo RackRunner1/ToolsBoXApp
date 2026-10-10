@@ -1,11 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window capabilities of ToolsBoXApp: core IPC, updates, file saving and external link opening.",
+  "description": "Main window capabilities of ToolsBoXApp: core IPC, file saving and external link opening. Updates are handled by the tbxa terminal command.",
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "allow-check-update",
     "allow-save-download",
     "allow-reveal-file",
     "allow-open-external"

@@ -118,9 +118,6 @@ function matches(element, selector) {
   if (/^a\[href\]$/.test(selector)) {
     return element.tagName === 'A' && element.hasAttribute('href');
   }
-  if (/^\[data-tbx-update\]$/.test(selector)) {
-    return element.hasAttribute('data-tbx-update');
-  }
   if (/^\[data-tbx-toast\]$/.test(selector)) {
     return element.hasAttribute('data-tbx-toast');
   }
@@ -145,10 +142,9 @@ function dispatch(target, event) {
 /* ------------------------------------------------------------------ *
  *  Simulated world
  * ------------------------------------------------------------------ */
-function createWorld(options) {
-  const opts = options || {};
+function createWorld() {
   const document = new FakeElement('#document');
-  document.readyState = opts.readyState || 'complete';
+  document.readyState = 'complete';
   document.head = new FakeElement('head');
   document.body = new FakeElement('body');
   document.head.parentNode = document;
@@ -179,36 +175,17 @@ function createWorld(options) {
   window.window = window;
   window.self = window;
 
-  const eventListeners = {};
-
-  if (opts.updateResult !== undefined) {
-    const updateResult = opts.updateResult;
-    const savedPath = opts.savedPath || 'C:\\Users\\test\\Downloads\\file.png';
-    const rejected = opts.rejectCommands || [];
-    window.__TAURI__ = {
-      core: {
-        invoke: (command, payload, options2) => {
-          invokes.push({ command, payload, options: options2 });
-          if (rejected.indexOf(command) !== -1) {
-            return Promise.reject(new Error(command + ' failed (test)'));
-          }
-          if (command === 'check_update') {
-            return Promise.resolve(updateResult);
-          }
-          if (command === 'save_download') {
-            return Promise.resolve(savedPath);
-          }
-          return Promise.resolve(opts.invokeResults && opts.invokeResults[command]);
+  window.__TAURI__ = {
+    core: {
+      invoke: (command, payload, options2) => {
+        invokes.push({ command, payload, options: options2 });
+        if (command === 'save_download') {
+          return Promise.resolve('C:\\Users\\test\\Downloads\\file.png');
         }
-      },
-      event: {
-        listen: (name, handler) => {
-          (eventListeners[name] = eventListeners[name] || []).push(handler);
-          return Promise.resolve(() => {});
-        }
+        return Promise.resolve(undefined);
       }
-    };
-  }
+    }
+  };
 
   const sandbox = {
     window,
@@ -229,7 +206,7 @@ function createWorld(options) {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
 
-  return { sandbox, document, invokes, window, eventListeners };
+  return { sandbox, document, invokes, window };
 }
 
 function run(world) {
@@ -245,89 +222,19 @@ function isUint8Array(value) {
   return Object.prototype.toString.call(value) === '[object Uint8Array]';
 }
 
-function fireEvent(world, name, payload) {
-  const handlers = world.eventListeners[name] || [];
-  for (const handler of handlers) {
-    handler({ event: name, payload });
-  }
-}
-
-function updateBannerInfo() {
-  return {
-    available: true,
-    currentVersion: '2026.10.10',
-    latestVersion: '20261011',
-    releaseUrl: 'https://github.com/RackRunner1/ToolsBoXApp/releases/latest',
-    downloadUrl: null,
-    error: null
-  };
-}
-
-function updateButtonOf(world) {
-  const banner = world.document.body.querySelector('[data-tbx-update]');
-  if (!banner) {
-    return { banner: null, button: null };
-  }
-  const buttons = banner.children[banner.children.length - 1].children;
-  return { banner, button: buttons[buttons.length - 1] };
-}
-
-function click(element) {
-  const handlers = (element.listeners && element.listeners['click']) || [];
-  for (const handler of handlers) {
-    handler({});
-  }
-}
-
 /* ------------------------------------------------------------------ *
  *  Test suite (async: shim invokes resolve on later ticks)
  * ------------------------------------------------------------------ */
 async function main() {
   /* -------------------------------------------------------------- *
-   *  1. Boot + update check
+   *  1. Intercepted download
    * -------------------------------------------------------------- */
-  console.log('\n[1] Startup and update check');
+  console.log('\n[1] Download interception');
   {
-    const world = run(createWorld({
-      updateResult: {
-        available: true,
-        currentVersion: '2026.10.10',
-        latestVersion: '20261011',
-        releaseUrl: 'https://github.com/RackRunner1/ToolsBoXApp/releases/latest',
-        downloadUrl: 'https://github.com/RackRunner1/ToolsBoXApp/releases/download/20261011/ToolsBoXApp-Setup-x64.exe',
-        error: null
-      }
-    }));
+    const world = run(createWorld());
     await tick();
-
-    const calls = world.invokes.map((entry) => entry.command);
-    check('check_update called on startup', calls.indexOf('check_update') !== -1, calls.join(','));
-    const banner = world.document.body.querySelector('[data-tbx-update]');
-    check('update banner shown', !!banner);
-    if (banner) {
-      const text = banner.children.map((child) => child.textContent).join(' | ');
-      check('banner mentions the new version', text.indexOf('20261011') !== -1, text);
-      const buttons = banner.children[banner.children.length - 1].children;
-      check('"Update" button present', buttons[buttons.length - 1].textContent === 'Update');
-    }
     check('styles injected', !!world.document.head.children.length);
 
-    // Second page load within 6 h: throttled through localStorage.
-    const second = createWorld({ updateResult: { available: false } });
-    second.window.localStorage = world.window.localStorage;
-    second.sandbox.localStorage = world.window.localStorage;
-    run(second);
-    await tick();
-    const calls2 = second.invokes.map((entry) => entry.command);
-    check('check_update NOT called again within 6h (throttle)', calls2.indexOf('check_update') === -1, calls2.join(','));
-  }
-
-  /* -------------------------------------------------------------- *
-   *  2. Intercepted download
-   * -------------------------------------------------------------- */
-  console.log('\n[2] Download interception');
-  {
-    const world = run(createWorld({ updateResult: { available: false } }));
     const anchor = new FakeElement('a');
     anchor.setAttribute('href', 'blob:https://tauri.localhost/1234');
     anchor.setAttribute('download', 'blurred.png');
@@ -350,11 +257,12 @@ async function main() {
   }
 
   /* -------------------------------------------------------------- *
-   *  3. External links
+   *  2. External links
    * -------------------------------------------------------------- */
-  console.log('\n[3] External links');
+  console.log('\n[2] External links');
   {
-    const world = run(createWorld({ updateResult: { available: false } }));
+    const world = run(createWorld());
+    await tick();
 
     const external = new FakeElement('a');
     external.setAttribute('href', 'https://github.com/RackRunner1/ToolsBoXMachine');
@@ -373,11 +281,13 @@ async function main() {
   }
 
   /* -------------------------------------------------------------- *
-   *  4. window.open and clipboard
+   *  3. window.open and clipboard
    * -------------------------------------------------------------- */
-  console.log('\n[4] window.open and clipboard');
+  console.log('\n[3] window.open and clipboard');
   {
-    const world = run(createWorld({ updateResult: { available: false } }));
+    const world = run(createWorld());
+    await tick();
+
     const opened = world.window.open('https://example.com/doc', '_blank');
     check('window.open on external target -> open_external', world.invokes.some((entry) => entry.command === 'open_external'));
     check('window.open returns null', opened === null);
@@ -393,65 +303,8 @@ async function main() {
     }
   }
 
-  await inAppUpdateSuite();
-
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed === 0 ? 0 : 1);
-}
-
-async function inAppUpdateSuite() {
-  /* -------------------------------------------------------------- *
-   *  5. In-app update flow
-   * -------------------------------------------------------------- */
-  console.log('\n[5] In-app update flow');
-  {
-    const world = run(createWorld({ updateResult: updateBannerInfo() }));
-    await tick();
-
-    const found = updateButtonOf(world);
-    check('update banner shown', !!found.banner);
-    click(found.button);
-    await tick(8);
-
-    check('apply_update invoked on Update click',
-      world.invokes.some((entry) => entry.command === 'apply_update'));
-    check('button disabled while updating', found.button.disabled === true);
-
-    fireEvent(world, 'tbx-update-progress', { downloaded: 50, total: 100 });
-    check('progress shown on the button', found.button.textContent === 'Downloading 50%',
-      found.button.textContent);
-
-    fireEvent(world, 'tbx-update-progress', { downloaded: 100, total: 100 });
-    check('installing shown at 100%', found.button.textContent === 'Installing...',
-      found.button.textContent);
-  }
-
-  /* -------------------------------------------------------------- *
-   *  6. Failed update falls back to a manual-install toast
-   * -------------------------------------------------------------- */
-  console.log('\n[6] Failed update fallback');
-  {
-    const world = run(createWorld({
-      updateResult: updateBannerInfo(),
-      rejectCommands: ['apply_update']
-    }));
-    await tick();
-
-    const found = updateButtonOf(world);
-    click(found.button);
-    await tick(8);
-
-    check('button re-enabled after failure',
-      found.button.disabled === false && found.button.textContent === 'Update',
-      found.button.textContent);
-    const toast = world.document.body.querySelector('[data-tbx-toast]');
-    check('manual-install toast shown', !!toast);
-    if (toast) {
-      check('toast mentions manual install',
-        toast.children[0].textContent.indexOf('manually') !== -1,
-        toast.children[0].textContent);
-    }
-  }
 }
 
 main().catch((error) => {

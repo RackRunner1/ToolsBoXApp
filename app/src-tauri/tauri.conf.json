@@ -34,41 +34,30 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": ["rpm"],
     "category": "Utility",
     "publisher": "RackRunner",
-    "copyright": "Copyright © RackRunner",
+    "copyright": "Copyright (c) RackRunner",
     "homepage": "https://github.com/RackRunner1/ToolsBoXApp",
     "licenseFile": "../../LICENSE",
     "shortDescription": "Desktop toolbox (ToolsBoXMachine content)",
-    "longDescription": "ToolsBoXApp embeds the ToolsBoXMachine content in a WebView2 window and notifies about new versions published on GitHub.",
+    "longDescription": "ToolsBoXApp embeds the ToolsBoXMachine content in a desktop window. Updates and removal are handled through the tbxa terminal command.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
-      "icons/icon.png",
-      "icons/icon.ico"
+      "icons/icon.png"
     ],
-    "windows": {
-      "webviewInstallMode": {
-        "type": "downloadBootstrapper",
-        "silent": true
-      },
-      "nsis": {
-        "installMode": "currentUser",
-        "languages": ["English", "French"],
-        "compression": "lzma"
+    "linux": {
+      "rpm": {
+        "release": "1",
+        "epoch": 0,
+        "depends": ["webkit2gtk4.1", "libsoup3", "gtk3", "curl"],
+        "files": {
+          "/usr/bin/tbxa": "../../cli/target/release/tbxa"
+        }
       }
     },
     "resources": []
-  },
-  "plugins": {
-    "updater": {
-      "active": true,
-      "endpoints": [
-        "https://github.com/RackRunner1/ToolsBoXApp/releases/latest/download/latest.json"
-      ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNFMTlDNTI2OEYyNzdGOTUKUldTVmZ5ZVBKc1VaUGgyNVVuK3pVTUtUbmJoQkdpK1R0bExmMlNNNStGL1VtSndDYjNKL2N4YlMK"
-    }
   }
 }

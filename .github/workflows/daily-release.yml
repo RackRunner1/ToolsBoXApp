@@ -1,10 +1,13 @@
 name: Daily Build & Release
 
-# Daily build of ToolsBoXApp (x64 NSIS installer) from the content synced
+# Daily build of ToolsBoXApp (x64 RPM package) from the content synced
 # from ToolsBoXMachine, then publication as a GitHub release.
 #
 # - every day at midnight (UTC)
 # - or on demand from the repository Actions tab
+#
+# Linux only. The RPM also installs the `tbxa` terminal companion
+# (`tbxa update` / `tbxa uninstall`).
 
 on:
   schedule:
@@ -17,10 +20,6 @@ on:
         default: true
       do_release:
         description: "Create / update the GitHub release"
-        type: boolean
-        default: true
-      do_updater:
-        description: "Generate signed updater artifacts (.nsis.zip, latest.json)"
         type: boolean
         default: true
       sync_branch:
@@ -37,11 +36,10 @@ concurrency:
 
 env:
   TBX_SOURCE_REPO: RackRunner1/ToolsBoXMachine
-  SETUP_ASSET: ToolsBoXApp-Setup-x64.exe
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -50,228 +48,176 @@ jobs:
           fetch-depth: 1
 
       # ---------------------------------------------------------------------
-      # Build date, version (semver YYYY.M.D) and release tag (YYYYMMDD)
+      # Build date, version (YYYY.M.D) and release tag (YYYYMMDD)
       # ---------------------------------------------------------------------
       - name: Compute build date, version and options
         id: vars
-        shell: pwsh
         run: |
-          $buildDate = [DateTime]::UtcNow
-          $version = "$($buildDate.Year).$($buildDate.Month).$($buildDate.Day)"
-          $tag = $buildDate.ToString('yyyyMMdd')
-
-          $doSync = $false
-          $doRelease = $false
-          $doUpdater = $true
-          $branch = 'main'
-
-          switch ($env:GITHUB_EVENT_NAME) {
-            'schedule' {
-              $doSync = $true
-              $doRelease = $true
-            }
-            'workflow_dispatch' {
-              $doSync = "${{ inputs.do_sync }}" -ne 'false'
-              $doRelease = "${{ inputs.do_release }}" -ne 'false'
-              $doUpdater = "${{ inputs.do_updater }}" -ne 'false'
-              $branch = "${{ inputs.sync_branch }}"
-              if ([string]::IsNullOrWhiteSpace($branch)) { $branch = 'main' }
-            }
-            default {
-              $doSync = $true
-              $doRelease = $true
-            }
-          }
-
-          "version=$version" >> $env:GITHUB_OUTPUT
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-          "date=$($buildDate.ToString('yyyy-MM-dd'))" >> $env:GITHUB_OUTPUT
-          "branch=$branch" >> $env:GITHUB_OUTPUT
-          "do_sync=$($doSync.ToString().ToLower())" >> $env:GITHUB_OUTPUT
-          "do_release=$($doRelease.ToString().ToLower())" >> $env:GITHUB_OUTPUT
-          "do_updater=$($doUpdater.ToString().ToLower())" >> $env:GITHUB_OUTPUT
-          Write-Host "Build $tag (version $version) - sync=$doSync release=$doRelease updater=$doUpdater branch=$branch"
+          VERSION="$(date -u +"%-Y.%-m.%-d")"
+          TAG="$(date -u +%Y%m%d)"
+          DATE="$(date -u +%Y-%m-%d)"
+          BRANCH="main"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            DO_SYNC=true
+            DO_RELEASE=true
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            DO_SYNC="${{ inputs.do_sync }}"
+            DO_RELEASE="${{ inputs.do_release }}"
+            BRANCH="${{ inputs.sync_branch }}"
+            [ -z "$BRANCH" ] && BRANCH="main"
+          else
+            DO_SYNC=true
+            DO_RELEASE=true
+          fi
+          {
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+            echo "date=$DATE"
+            echo "branch=$BRANCH"
+            echo "do_sync=$DO_SYNC"
+            echo "do_release=$DO_RELEASE"
+          } >> "$GITHUB_OUTPUT"
+          echo "Build $TAG (version $VERSION) - sync=$DO_SYNC release=$DO_RELEASE branch=$BRANCH"
 
       # ---------------------------------------------------------------------
       # 1. Fetch the content from ToolsBoXMachine
       # ---------------------------------------------------------------------
       - name: Sync contents/ from ToolsBoXMachine
         if: steps.vars.outputs.do_sync == 'true'
-        shell: pwsh
-        run: .\scripts\sync-contents.ps1 -SourceRepo "https://github.com/${{ env.TBX_SOURCE_REPO }}.git" -Branch "${{ steps.vars.outputs.branch }}"
+        run: ./scripts/sync-contents.sh --source-repo "https://github.com/${{ env.TBX_SOURCE_REPO }}.git" --branch "${{ steps.vars.outputs.branch }}"
 
       - name: Commit & push contents/
         if: steps.vars.outputs.do_sync == 'true'
-        shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A contents
-          if ($LASTEXITCODE -ne 0) { throw "git add failed" }
-
-          git diff --cached --quiet
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host "No changes in contents/ (source unchanged)."
+          if git diff --cached --quiet; then
+            echo "No changes in contents/ (source unchanged)."
             exit 0
-          }
-
-          git commit -m "chore(contents): sync ToolsBoXMachine ${{ steps.vars.outputs.tag }}" | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
-
-          try {
-            git push
-          }
-          catch {
-            Write-Host "Push rejected, rebasing then retrying."
-            git pull --rebase
-            git push
-          }
-          if ($LASTEXITCODE -ne 0) { throw "git push failed" }
+          fi
+          git commit -m "chore(contents): sync ToolsBoXMachine ${{ steps.vars.outputs.tag }}"
+          git push || { echo "Push rejected, rebasing then retrying."; git pull --rebase && git push; }
 
       # ---------------------------------------------------------------------
-      # 2. Build preparation (web assets, icons, version)
+      # 2. Build preparation (web assets, JS deps, icons, version)
       # ---------------------------------------------------------------------
       - name: Prepare web assets (embedded into the binary)
-        shell: pwsh
-        run: .\scripts\prepare-web.ps1
-
-      - name: Generate icons from the content logo
-        shell: pwsh
-        run: .\scripts\generate-icons.ps1
-
-      - name: Inject the build version
-        shell: pwsh
-        run: |
-          $version = "${{ steps.vars.outputs.version }}"
-          $config = "app\src-tauri\tauri.conf.json"
-          if (-not (Test-Path $config)) { throw "$config not found" }
-
-          # Targeted replacement (no full JSON rewrite: Tauri's serde_json
-          # rejects files with a UTF-8 BOM).
-          $raw = [IO.File]::ReadAllText($config)
-          $new = [regex]::Replace(
-            $raw,
-            '"version"\s*:\s*"[^"]*"',
-            ('"version": "' + $version + '"'),
-            [Text.RegularExpressions.RegexOptions]::IgnoreCase,
-            [TimeSpan]::FromSeconds(5))
-          if ($new -eq $raw) { throw "Cannot inject version $version into $config" }
-          [IO.File]::WriteAllText($config, $new, (New-Object Text.UTF8Encoding($false)))
-
-          $check = [regex]::Match([IO.File]::ReadAllText($config), '"version"\s*:\s*"([^"]*)"').Groups[1].Value
-          if ($check -ne $version) { throw "Check failed: version read = '$check'" }
-          Write-Host "Version injected: $check"
+        run: ./scripts/prepare-web.sh
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: app/src-tauri
-
       - name: Install JS dependencies (Tauri CLI)
         working-directory: app
         run: npm install --no-audit --no-fund
 
+      - name: Generate icons from the content logo
+        run: ./scripts/generate-icons.sh
+
+      - name: Inject the build version
+        run: |
+          python3 - "app/src-tauri/tauri.conf.json" "${{ steps.vars.outputs.version }}" <<'PYEOF'
+          import re, sys
+          path, version = sys.argv[1], sys.argv[2]
+          with open(path, encoding="utf-8") as f:
+              raw = f.read()
+          new = re.sub(r'"version"\s*:\s*"[^"]*"', f'"version": "{version}"', raw, count=1, flags=re.IGNORECASE)
+          assert new != raw, "cannot inject version"
+          with open(path, "w", encoding="utf-8", newline="") as f:
+              f.write(new)
+          check = re.search(r'"version"\s*:\s*"([^"]*)"', new).group(1)
+          assert check == version, f"check failed: {check}"
+          print(f"Version injected: {check}")
+          PYEOF
+
       # ---------------------------------------------------------------------
-      # 3. Build the x64 NSIS installer (+ signed updater artifacts when
-      #    the signing key is configured)
+      # 3. Toolchains (Rust + Linux WebKit build dependencies)
       # ---------------------------------------------------------------------
-      - name: Build (release) + NSIS bundler
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl wget file \
+            libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev \
+            libwebkit2gtk-4.1-dev \
+            rpm rsync python3-pil
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo (Tauri app)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      # ---------------------------------------------------------------------
+      # 4. Test + build the tbxa companion CLI
+      # ---------------------------------------------------------------------
+      - name: Test the tbxa CLI
+        run: cargo test --manifest-path cli/Cargo.toml
+
+      - name: Build the tbxa CLI (release)
+        run: |
+          cargo build --release --manifest-path cli/Cargo.toml
+          ls -la cli/target/release/tbxa
+          ./cli/target/release/tbxa --help
+
+      # ---------------------------------------------------------------------
+      # 5. Build the x64 RPM package
+      # ---------------------------------------------------------------------
+      - name: Build (release) + RPM bundler
         working-directory: app
-        shell: pwsh
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          DO_UPDATER: ${{ steps.vars.outputs.do_updater }}
+        run: npm run build
+
+      - name: Collect and verify the RPM
+        id: rpm
         run: |
-          $tauriArgs = @('tauri', 'build')
-          if ($env:TAURI_SIGNING_PRIVATE_KEY -and $env:DO_UPDATER -eq 'true') {
-            Write-Host "Signing key present: updater artifacts will be generated and signed."
-            $tauriArgs += '--config'
-            $tauriArgs += '{"bundle":{"createUpdaterArtifacts":true}}'
-          }
-          else {
-            Write-Host "Regular installer only (no updater artifacts)."
-          }
-          npx @tauriArgs
-          if ($LASTEXITCODE -ne 0) { throw "tauri build failed (code $LASTEXITCODE)" }
+          mkdir -p artifacts
+          RPM="$(ls -t app/src-tauri/target/release/bundle/rpm/*.rpm 2>/dev/null | head -n 1)"
+          [ -n "$RPM" ] || { echo "No RPM produced under app/src-tauri/target/release/bundle/rpm" >&2; exit 1; }
+          echo "Picked RPM: $RPM"
+          cp "$RPM" artifacts/
+          ASSET="$(basename "$RPM")"
+          echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
 
-      - name: Collect the installer
-        id: installer
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path artifacts -Force | Out-Null
+          echo "--- package info ---"
+          rpm -qip "artifacts/$ASSET"
+          echo "--- package contents ---"
+          rpm -qlp "artifacts/$ASSET" | tee /tmp/rpm-list.txt
+          grep -q "/usr/bin/tbxa" /tmp/rpm-list.txt || { echo "tbxa missing from the RPM!" >&2; exit 1; }
+          grep -q "/usr/bin/toolsboxapp" /tmp/rpm-list.txt || { echo "app binary missing from the RPM!" >&2; exit 1; }
+          grep -q "\.desktop$" /tmp/rpm-list.txt || { echo "desktop file missing from the RPM!" >&2; exit 1; }
+          echo "RPM verified: app binary, tbxa and desktop file present."
 
-          # Deterministic pick: the canonical standalone installer first,
-          # recursive fallback otherwise (e.g. updater-only layout).
-          $setup = Get-ChildItem -Path "app\src-tauri\target\release\bundle\nsis" -Filter "*-setup.exe" -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          if (-not $setup) {
-            $setup = Get-ChildItem -Path "app\src-tauri\target" -Recurse -Filter "*-setup.exe" -ErrorAction SilentlyContinue |
-              Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          }
-          if (-not $setup) { throw "No NSIS installer produced under app\src-tauri\target" }
-          Write-Host "Picked installer: $($setup.FullName)"
-
-          Copy-Item $setup.FullName (Join-Path "artifacts" $env:SETUP_ASSET) -Force
-          Write-Host "Installer: $($setup.Name) ($([math]::Round($setup.Length/1MB,1)) MB)"
-
-          $display = (Get-AuthenticodeSignature $setup.FullName)
-          Write-Host "Authenticode signature: $($display.Status)"
-
-          $sha = (Get-FileHash (Join-Path "artifacts" $env:SETUP_ASSET) -Algorithm SHA256).Hash.ToLower()
-          "$sha  $env:SETUP_ASSET" | Set-Content (Join-Path "artifacts" "checksums.txt") -Encoding utf8
-          "path=$(Join-Path (Get-Location) "artifacts" $env:SETUP_ASSET)" >> $env:GITHUB_OUTPUT
-          "sha256=$sha" >> $env:GITHUB_OUTPUT
-          "source_name=$($setup.Name)" >> $env:GITHUB_OUTPUT
-
-          $updaterFiles = Get-ChildItem -Path "app\src-tauri\target\release\bundle" -Recurse -Include "*.nsis.zip", "*.nsis.zip.sig", "latest.json" -ErrorAction SilentlyContinue
-          foreach ($file in $updaterFiles) {
-            Copy-Item $file.FullName (Join-Path "artifacts" $file.Name) -Force
-            Write-Host "Updater artifact: $($file.Name) ($([math]::Round($file.Length/1KB,1)) KB)"
-          }
-          if ($updaterFiles) {
-            $latestJson = Join-Path "artifacts" "latest.json"
-            if (Test-Path $latestJson) {
-              Write-Host "latest.json content:"
-              Get-Content $latestJson -Raw | Write-Host
-            }
-          }
-          else {
-            Write-Host "No updater artifacts found (signing key not configured?)."
-          }
+          (cd artifacts && sha256sum "$ASSET" > checksums.txt)
+          cat artifacts/checksums.txt
 
       # ---------------------------------------------------------------------
-      # 4. Release notes (installation only)
+      # 6. Release notes (installation only)
       # ---------------------------------------------------------------------
       - name: Prepare the release notes
         if: steps.vars.outputs.do_release == 'true'
         id: notes
-        shell: pwsh
         run: |
-          $tag = "${{ steps.vars.outputs.tag }}"
-          $lines = @(
-            "## ToolsBoXApp $tag"
-            ""
-            "### Installation"
-            "- New install: download $env:SETUP_ASSET below and run it (per-user install, no admin rights needed)."
-            "- Update: the app downloads and installs newer versions by itself (with your confirmation)."
-            "- If Smart App Control blocks the installer, switch it off temporarily (Settings -> Privacy and security -> Windows Security -> App and browser control)."
-          )
+          TAG="${{ steps.vars.outputs.tag }}"
+          ASSET="${{ steps.rpm.outputs.asset }}"
+          cat >> "$GITHUB_OUTPUT" <<EOF
+          body<<RELEASE_NOTES_EOF
+          ## ToolsBoXApp $TAG
 
-          "body<<RELEASE_NOTES_EOF" >> $env:GITHUB_OUTPUT
-          ($lines -join "`n") >> $env:GITHUB_OUTPUT
-          "RELEASE_NOTES_EOF" >> $env:GITHUB_OUTPUT
+          ### Installation
+          - New install (Fedora/RHEL): download \`$ASSET\` below, then \`sudo dnf install ./$ASSET\`.
+          - Update: run \`tbxa update\` (fetches the latest release and reinstalls when newer).
+          - Uninstall: run \`tbxa uninstall\`.
+          RELEASE_NOTES_EOF
+          EOF
 
       # ---------------------------------------------------------------------
-      # 5. Publish the release
+      # 7. Publish the release
       # ---------------------------------------------------------------------
       - name: Publish the ${{ steps.vars.outputs.tag }} release
         if: steps.vars.outputs.do_release == 'true'
@@ -283,8 +229,5 @@ jobs:
           make_latest: true
           fail_on_unmatched_files: false
           files: |
-            artifacts/${{ env.SETUP_ASSET }}
+            artifacts/*.rpm
             artifacts/checksums.txt
-            artifacts/*.nsis.zip
-            artifacts/*.nsis.zip.sig
-            artifacts/latest.json
