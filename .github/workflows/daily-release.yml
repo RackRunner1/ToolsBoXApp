@@ -249,6 +249,7 @@ jobs:
             "### Installation"
             "- New install: download $env:SETUP_ASSET below and run it (per-user install, no admin rights needed)."
             "- Update: the app downloads and installs newer versions by itself (with your confirmation)."
+            "- If Smart App Control blocks the installer, switch it off temporarily (Settings -> Privacy and security -> Windows Security -> App and browser control)."
           )
 
           "body<<RELEASE_NOTES_EOF" >> $env:GITHUB_OUTPUT
