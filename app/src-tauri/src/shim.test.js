@@ -64,6 +64,10 @@ class FakeElement {
     // Supporte : 'a[download]', 'a[href]', '[data-tbx-update]'
     return this.querySelectorAll(selector)[0] || null;
   }
+  getElementById(id) {
+    const found = this.querySelectorAll('[id]').filter((element) => element.id === id);
+    return found[0] || null;
+  }
   querySelectorAll(selector) {
     const out = [];
     const walk = (node) => {
@@ -135,6 +139,8 @@ function createWorld(options) {
   document.body = new FakeElement('body');
   document.head.parentNode = document;
   document.body.parentNode = document;
+  document.createElement = (tag) => new FakeElement(tag);
+  document.createTextNode = (text) => new FakeElement('#text');
 
   const invokes = [];
   const clipboard = {
