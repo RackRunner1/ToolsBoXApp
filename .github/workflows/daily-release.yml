@@ -8,6 +8,12 @@ name: Daily Build & Release
 #
 # Linux only. The RPM also installs the `tbxa` terminal companion
 # (`tbxa update` / `tbxa uninstall`).
+#
+# The `check` job compares the source commit embedded in the latest release
+# with the current upstream HEAD: when ToolsBoXMachine has not moved, the
+# `build` job is skipped entirely (no identical rebuild, no empty release).
+# Pass `force: true` on manual runs to rebuild anyway (e.g. after app-code
+# changes with no upstream movement).
 
 on:
   schedule:
@@ -26,6 +32,10 @@ on:
         description: "Source branch to sync"
         type: string
         default: "main"
+      force:
+        description: "Bypass the upstream-change check and build anyway"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -38,18 +48,26 @@ env:
   TBX_SOURCE_REPO: RackRunner1/ToolsBoXMachine
 
 jobs:
-  build:
+  # -----------------------------------------------------------------------
+  # Should we build? Compare upstream HEAD with the source commit embedded
+  # in the latest published release.
+  # -----------------------------------------------------------------------
+  check:
     runs-on: ubuntu-latest
-
+    outputs:
+      has_changes: ${{ steps.changes.outputs.has_changes }}
+      version: ${{ steps.vars.outputs.version }}
+      tag: ${{ steps.vars.outputs.tag }}
+      date: ${{ steps.vars.outputs.date }}
+      branch: ${{ steps.vars.outputs.branch }}
+      do_sync: ${{ steps.vars.outputs.do_sync }}
+      do_release: ${{ steps.vars.outputs.do_release }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      # ---------------------------------------------------------------------
-      # Build date, version (YYYY.M.D) and release tag (YYYYMMDD)
-      # ---------------------------------------------------------------------
       - name: Compute build date, version and options
         id: vars
         run: |
@@ -79,15 +97,73 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Build $TAG (version $VERSION) - sync=$DO_SYNC release=$DO_RELEASE branch=$BRANCH"
 
+      - name: Check for upstream changes since the latest release
+        id: changes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ steps.vars.outputs.branch }}"
+
+          if [ "${{ inputs.force }}" = "true" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Forced rebuild (force=true), skipping the upstream check."
+            exit 0
+          fi
+
+          # Any doubt below defaults to building (safe direction).
+          LATEST_TAG="$(curl -fsSL --max-time 30 \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/latest" \
+            2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('tag_name',''))" 2>/dev/null)"
+          if [ -z "$LATEST_TAG" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "No previous release found (or API unreachable), building."
+            exit 0
+          fi
+          echo "Latest release: $LATEST_TAG"
+
+          LAST_SHA=""
+          if git fetch --depth 1 origin tag "$LATEST_TAG" 2>/dev/null; then
+            LAST_SHA="$(git show "$LATEST_TAG:contents/.sync-info.json" 2>/dev/null \
+              | python3 -c "import json,sys; print(json.load(sys.stdin).get('sourceSha',''))" 2>/dev/null)"
+          fi
+          UPSTREAM_SHA="$(git ls-remote "https://github.com/${{ env.TBX_SOURCE_REPO }}.git" "refs/heads/$BRANCH" 2>/dev/null | cut -f1)"
+          echo "Source embedded in release $LATEST_TAG: ${LAST_SHA:-unknown}"
+          echo "Upstream $BRANCH HEAD: ${UPSTREAM_SHA:-unknown}"
+
+          if [ -n "$LAST_SHA" ] && [ -n "$UPSTREAM_SHA" ] && [ "$LAST_SHA" = "$UPSTREAM_SHA" ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No new commits on ${{ env.TBX_SOURCE_REPO }} ($BRANCH) since release $LATEST_TAG. Skipping the build (use force=true to rebuild anyway)."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "New upstream commits detected, building."
+          fi
+
+  # -----------------------------------------------------------------------
+  # Full pipeline: sync, build the RPM, publish the release.
+  # Runs only when the check job detected upstream changes.
+  # -----------------------------------------------------------------------
+  build:
+    needs: check
+    if: needs.check.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       # ---------------------------------------------------------------------
       # 1. Fetch the content from ToolsBoXMachine
       # ---------------------------------------------------------------------
       - name: Sync contents/ from ToolsBoXMachine
-        if: steps.vars.outputs.do_sync == 'true'
-        run: ./scripts/sync-contents.sh --source-repo "https://github.com/${{ env.TBX_SOURCE_REPO }}.git" --branch "${{ steps.vars.outputs.branch }}"
+        if: needs.check.outputs.do_sync == 'true'
+        run: ./scripts/sync-contents.sh --source-repo "https://github.com/${{ env.TBX_SOURCE_REPO }}.git" --branch "${{ needs.check.outputs.branch }}"
 
       - name: Commit & push contents/
-        if: steps.vars.outputs.do_sync == 'true'
+        if: needs.check.outputs.do_sync == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -96,7 +172,7 @@ jobs:
             echo "No changes in contents/ (source unchanged)."
             exit 0
           fi
-          git commit -m "chore(contents): sync ToolsBoXMachine ${{ steps.vars.outputs.tag }}"
+          git commit -m "chore(contents): sync ToolsBoXMachine ${{ needs.check.outputs.tag }}"
           git push || { echo "Push rejected, rebasing then retrying."; git pull --rebase && git push; }
 
       # ---------------------------------------------------------------------
@@ -119,7 +195,7 @@ jobs:
 
       - name: Inject the build version
         run: |
-          python3 - "app/src-tauri/tauri.conf.json" "${{ steps.vars.outputs.version }}" <<'PYEOF'
+          python3 - "app/src-tauri/tauri.conf.json" "${{ needs.check.outputs.version }}" <<'PYEOF'
           import re, sys
           path, version = sys.argv[1], sys.argv[2]
           with open(path, encoding="utf-8") as f:
@@ -200,10 +276,10 @@ jobs:
       # 6. Release notes (installation only)
       # ---------------------------------------------------------------------
       - name: Prepare the release notes
-        if: steps.vars.outputs.do_release == 'true'
+        if: needs.check.outputs.do_release == 'true'
         id: notes
         run: |
-          TAG="${{ steps.vars.outputs.tag }}"
+          TAG="${{ needs.check.outputs.tag }}"
           ASSET="${{ steps.rpm.outputs.asset }}"
           cat >> "$GITHUB_OUTPUT" <<EOF
           body<<RELEASE_NOTES_EOF
@@ -219,12 +295,12 @@ jobs:
       # ---------------------------------------------------------------------
       # 7. Publish the release
       # ---------------------------------------------------------------------
-      - name: Publish the ${{ steps.vars.outputs.tag }} release
-        if: steps.vars.outputs.do_release == 'true'
+      - name: Publish the ${{ needs.check.outputs.tag }} release
+        if: needs.check.outputs.do_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.vars.outputs.tag }}
-          name: ${{ steps.vars.outputs.tag }}
+          tag_name: ${{ needs.check.outputs.tag }}
+          name: ${{ needs.check.outputs.tag }}
           body: ${{ steps.notes.outputs.body }}
           make_latest: true
           fail_on_unmatched_files: false
