@@ -160,7 +160,7 @@ jobs:
       - name: Compiler et signer le package MSIX (x64)
         shell: pwsh
         run: |
-          & "${{ steps.msb.outputs.path }}" "src\ToolsBoXApp.Package\ToolsBoXApp.Package.wapproj" `
+          & "${{ steps.msb.outputs.path }}" "src\ToolsBoXApp.Package\ToolsBoXApp.Package.csproj" `
             /t:Restore,Build `
             /p:Configuration=Release `
             /p:Platform=x64 `
@@ -174,9 +174,14 @@ jobs:
         id: verify
         shell: pwsh
         run: |
-          $msix = Get-ChildItem -Path "src\ToolsBoXApp.Package\AppX" -Filter "ToolsBoXApp_x64.msix" -Recurse |
+          $found = Get-ChildItem -Path "src\ToolsBoXApp.Package\AppX" -Filter "*.msix" -Recurse |
                   Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          if (-not $msix) { throw "MSIX introuvable dans src\ToolsBoXApp.Package\AppX" }
+          if (-not $found) { throw "MSIX introuvable dans src\ToolsBoXApp.Package\AppX" }
+          $msix = Get-Item (Join-Path $found.DirectoryName "ToolsBoXApp_x64.msix") -ErrorAction SilentlyContinue
+          if (-not $msix -or ($found.FullName -ne $msix.FullName)) {
+            Move-Item $found.FullName (Join-Path $found.DirectoryName "ToolsBoXApp_x64.msix") -Force
+            $msix = Get-Item (Join-Path $found.DirectoryName "ToolsBoXApp_x64.msix")
+          }
           Write-Debug "MSIX : $($msix.FullName) ($([int]($msix.Length/1MB)) Mo)"
           "MSIX_PATH=$($msix.FullName)" >> $env:GITHUB_ENV
 

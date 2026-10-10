@@ -30,4 +30,10 @@
     <ProjectReference Include="..\ToolsBoXApp\ToolsBoXApp.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <AppxManifest Include="Package.appxmanifest" />
+    <None Remove="Assets\**" />
+    <Content Include="Assets\**" />
+  </ItemGroup>
+
 </Project>
