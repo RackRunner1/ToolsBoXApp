@@ -9,7 +9,6 @@
 
     <DockPanel>
 
-        <!-- ======== Barre d'outils ======== -->
         <Border DockPanel.Dock="Top" Background="#1e293b" Padding="10,8">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -41,12 +40,10 @@
             </Grid>
         </Border>
 
-        <!-- ======== Barre d'état ======== -->
         <StatusBar DockPanel.Dock="Bottom" Background="#1e293b" Foreground="#94a3b8" Height="28">
             <TextBlock x:Name="TxtStatus" Margin="8,0" Text="Chargement…" />
         </StatusBar>
 
-        <!-- ======== Panneau principal ======== -->
         <Grid>
 
             <Grid.ColumnDefinitions>
@@ -55,7 +52,6 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- ---- Explorateur contents/ ---- -->
             <DockPanel Grid.Column="0" Background="#0f172a">
                 <Border DockPanel.Dock="Top" Background="#1e293b" Padding="12,8">
                     <TextBlock Text="Contenus" Foreground="#e2e8f0" FontWeight="SemiBold" />
@@ -83,8 +79,7 @@
             <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
                           Background="#334155" />
 
-            <!-- ---- Navigateur (moteur de rendu du site) ---- -->
-            <Grid Margin="4,0,0,0" Grid.Column="1">
+            <Grid Margin="4,0,0,0" Grid.Column="2">
                 <wpf:WebView2 x:Name="Browser" Visibility="Hidden" />
                 <TextBlock x:Name="Placeholder"
                            Text="Chargement du contenu…"
@@ -99,5 +94,5 @@
             </Grid>
 
         </Grid>
-    </Grid>
+    </DockPanel>
 </Window>

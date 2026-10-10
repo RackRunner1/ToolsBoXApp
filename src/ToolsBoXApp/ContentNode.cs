@@ -7,7 +7,6 @@ using System.Linq;
 
 namespace ToolsBoXApp;
 
-/// <summary>Nœud de l'arborescence contents/ (dossier ou fichier), chargé paresseusement.</summary>
 public sealed class ContentNode : INotifyPropertyChanged
 {
     private readonly string _root;
@@ -49,7 +48,6 @@ public sealed class ContentNode : INotifyPropertyChanged
         }
     }
 
-    /// <summary>Charge les enfants d'un dossier une seule fois.</summary>
     public void EnsureChildren()
     {
         if (_childrenLoaded || !IsDir) return;
@@ -58,7 +56,6 @@ public sealed class ContentNode : INotifyPropertyChanged
             Children.Add(child);
     }
 
-    /// <summary>Scanne le contenu racine (dossiers d'abord, puis fichiers, triés).</summary>
     public static IEnumerable<ContentNode> Scan(string root) => Enumerate(root, root);
 
     private static IEnumerable<ContentNode> Enumerate(string dir, string root)
@@ -70,7 +67,7 @@ public sealed class ContentNode : INotifyPropertyChanged
             dirs = Directory.EnumerateDirectories(dir);
             files = Directory.EnumerateFiles(dir);
         }
-        catch (Exception) // dossier inaccessible : on ignore silencieusement
+        catch (Exception)
         {
             yield break;
         }

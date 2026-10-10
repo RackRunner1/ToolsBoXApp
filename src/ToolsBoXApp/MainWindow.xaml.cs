@@ -38,7 +38,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        // ---- Initialisation du moteur WebView2 ----
         try
         {
             var userDataFolder = Path.Combine(
@@ -58,15 +57,13 @@ public partial class MainWindow : Window
 
         var core = Browser.CoreWebView2!;
 
-        // Les fichiers locaux sont servis sous https://toolbox.local/... :
-        // les liens absolus du site (/tools/xxx/xxx.html, fetch('/ui/navbar.html')...) fonctionnent tels quels.
         core.SetVirtualHostNameToFolderMapping(
             VirtualHost, _contentsDir, CoreWebView2HostResourceAccessKind.Allow);
 
         core.NewWindowRequested += (_, e) =>
         {
             try { Process.Start(new ProcessStartInfo(e.Uri) { UseShellExecute = true }); }
-            catch { /* on ignore */ }
+            catch { }
             e.Handled = true;
         };
 
@@ -87,7 +84,6 @@ public partial class MainWindow : Window
         BuildTree();
         UpdateStatusFromSyncInfo();
 
-        // Page d'accueil du site (index.html) si présente
         if (File.Exists(Path.Combine(_contentsDir, "index.html")))
         {
             NavigateTo("index.html");
@@ -99,8 +95,6 @@ public partial class MainWindow : Window
                 "Sélectionnez un fichier .html (lignes bleues) dans le panneau de gauche.";
         }
     }
-
-    // ================= navigation =================
 
     private void NavigateTo(string relativePath)
     {
@@ -143,8 +137,6 @@ public partial class MainWindow : Window
         else if (Keyboard.Modifiers == ModifierKeys.Alt && e.Key == Key.Right) { Browser.GoForward(); e.Handled = true; }
     }
 
-    // ================= arbre contents/ =================
-
     private void BuildTree()
     {
         ContentTree.Items.Clear();
@@ -169,11 +161,9 @@ public partial class MainWindow : Window
         }
         else if (node.IsDir)
         {
-            node.IsExpanded = !node.IsExpanded; // clic simple = déplier / replier
+            node.IsExpanded = !node.IsExpanded;
         }
     }
-
-    // ================= barre d'état =================
 
     private void UpdateStatusFromSyncInfo()
     {
@@ -193,7 +183,7 @@ public partial class MainWindow : Window
                 return;
             }
         }
-        catch { /* métadonnées illisibles : on affiche un simple décompte */ }
+        catch { }
 
         try
         {

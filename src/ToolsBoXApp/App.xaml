@@ -4,7 +4,6 @@
              StartupUri="MainWindow.xaml">
 
     <Application.Resources>
-        <!-- Boutons plats, accordés au thème sombre -->
         <Style TargetType="Button">
             <Setter Property="Background" Value="#334155" />
             <Setter Property="Foreground" Value="#e2e8f0" />

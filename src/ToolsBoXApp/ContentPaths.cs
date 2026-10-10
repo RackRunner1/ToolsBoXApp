@@ -4,14 +4,6 @@ using System.Linq;
 
 namespace ToolsBoXApp;
 
-/// <summary>
-/// Résout l'emplacement du dossier contents/ (le code du site synchro depuis ToolsBoXMachine).
-/// Ordre de priorité :
-///   1. Variable d'environnement TOOLSBOX_CONTENT_DIR (dev / override explicite)
-///   2. %LOCALAPPDATA%\ToolsBoXApp\contents            (override utilisateur)
-///   3. Dossier contents à côté de l'exécutable        (install MSIX + bin/)
-///   4. En remontant les dossiers parents               (dotnet run depuis src/)
-/// </summary>
 public static class ContentPaths
 {
     public const string FolderName = "contents";
