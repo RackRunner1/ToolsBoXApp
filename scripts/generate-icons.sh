@@ -57,6 +57,8 @@ PYEOF
 fi
 
 echo "Icon source: $SOURCE"
-(cd "$REPO_ROOT/app" && npx tauri icon "$SOURCE")
+# The content logo is usually wide (not square): --fit contain scales it
+# inside the square canvas with transparent padding instead of cropping.
+(cd "$REPO_ROOT/app" && npx tauri icon "$SOURCE" --fit contain)
 echo "OK: icons generated in $REPO_ROOT/app/src-tauri/icons"
 ls -la "$REPO_ROOT/app/src-tauri/icons"
