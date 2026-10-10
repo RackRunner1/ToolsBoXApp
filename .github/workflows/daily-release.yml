@@ -19,6 +19,10 @@ on:
         description: "Create / update the GitHub release"
         type: boolean
         default: true
+      do_updater:
+        description: "Generate signed updater artifacts (.nsis.zip, latest.json)"
+        type: boolean
+        default: true
       sync_branch:
         description: "Source branch to sync"
         type: string
@@ -58,6 +62,7 @@ jobs:
 
           $doSync = $false
           $doRelease = $false
+          $doUpdater = $true
           $branch = 'main'
 
           switch ($env:GITHUB_EVENT_NAME) {
@@ -68,6 +73,7 @@ jobs:
             'workflow_dispatch' {
               $doSync = "${{ inputs.do_sync }}" -ne 'false'
               $doRelease = "${{ inputs.do_release }}" -ne 'false'
+              $doUpdater = "${{ inputs.do_updater }}" -ne 'false'
               $branch = "${{ inputs.sync_branch }}"
               if ([string]::IsNullOrWhiteSpace($branch)) { $branch = 'main' }
             }
@@ -83,7 +89,8 @@ jobs:
           "branch=$branch" >> $env:GITHUB_OUTPUT
           "do_sync=$($doSync.ToString().ToLower())" >> $env:GITHUB_OUTPUT
           "do_release=$($doRelease.ToString().ToLower())" >> $env:GITHUB_OUTPUT
-          Write-Host "Build $tag (version $version) - sync=$doSync release=$doRelease branch=$branch"
+          "do_updater=$($doUpdater.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          Write-Host "Build $tag (version $version) - sync=$doSync release=$doRelease updater=$doUpdater branch=$branch"
 
       # ---------------------------------------------------------------------
       # 1. Fetch the content from ToolsBoXMachine
@@ -182,15 +189,16 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          DO_UPDATER: ${{ steps.vars.outputs.do_updater }}
         run: |
           $tauriArgs = @('tauri', 'build')
-          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+          if ($env:TAURI_SIGNING_PRIVATE_KEY -and $env:DO_UPDATER -eq 'true') {
             Write-Host "Signing key present: updater artifacts will be generated and signed."
             $tauriArgs += '--config'
             $tauriArgs += '{"bundle":{"createUpdaterArtifacts":true}}'
           }
           else {
-            Write-Host "No signing key configured: regular installer only (in-app updates stay dormant in this build)."
+            Write-Host "Regular installer only (no updater artifacts)."
           }
           npx @tauriArgs
           if ($LASTEXITCODE -ne 0) { throw "tauri build failed (code $LASTEXITCODE)" }
@@ -201,11 +209,17 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
 
-          $candidates = Get-ChildItem -Path "app\src-tauri\target" -Recurse -Filter "*-setup.exe" -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending
-          if (-not $candidates) { throw "No NSIS installer produced under app\src-tauri\target" }
+          # Deterministic pick: the canonical standalone installer first,
+          # recursive fallback otherwise (e.g. updater-only layout).
+          $setup = Get-ChildItem -Path "app\src-tauri\target\release\bundle\nsis" -Filter "*-setup.exe" -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if (-not $setup) {
+            $setup = Get-ChildItem -Path "app\src-tauri\target" -Recurse -Filter "*-setup.exe" -ErrorAction SilentlyContinue |
+              Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          }
+          if (-not $setup) { throw "No NSIS installer produced under app\src-tauri\target" }
+          Write-Host "Picked installer: $($setup.FullName)"
 
-          $setup = $candidates[0]
           Copy-Item $setup.FullName (Join-Path "artifacts" $env:SETUP_ASSET) -Force
           Write-Host "Installer: $($setup.Name) ($([math]::Round($setup.Length/1MB,1)) MB)"
 
