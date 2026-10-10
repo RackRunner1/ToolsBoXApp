@@ -1,10 +1,10 @@
 name: Daily Build & Release
 
-# Build quotidien de ToolsBoXApp (installeur NSIS x64) à partir du contenu
-# synchronisé depuis ToolsBoXMachine, puis publication d'une release GitHub.
+# Daily build of ToolsBoXApp (x64 NSIS installer) from the content synced
+# from ToolsBoXMachine, then publication as a GitHub release.
 #
-# - tous les jours à minuit (UTC)
-# - ou à la demande via l'onglet Actions du dépôt
+# - every day at midnight (UTC)
+# - or on demand from the repository Actions tab
 
 on:
   schedule:
@@ -12,15 +12,15 @@ on:
   workflow_dispatch:
     inputs:
       do_sync:
-        description: "Synchroniser contents/ depuis ToolsBoXMachine"
+        description: "Sync contents/ from ToolsBoXMachine"
         type: boolean
         default: true
       do_release:
-        description: "Créer / mettre à jour la release GitHub"
+        description: "Create / update the GitHub release"
         type: boolean
         default: true
       sync_branch:
-        description: "Branche source à synchroniser"
+        description: "Source branch to sync"
         type: string
         default: "main"
 
@@ -46,9 +46,9 @@ jobs:
           fetch-depth: 1
 
       # ---------------------------------------------------------------------
-      # Date de build, version (semver AAAA.M.J) et tag de release (AAAAMMJJ)
+      # Build date, version (semver YYYY.M.D) and release tag (YYYYMMDD)
       # ---------------------------------------------------------------------
-      - name: Calculer date, version et options
+      - name: Compute build date, version and options
         id: vars
         shell: pwsh
         run: |
@@ -83,12 +83,12 @@ jobs:
           "branch=$branch" >> $env:GITHUB_OUTPUT
           "do_sync=$($doSync.ToString().ToLower())" >> $env:GITHUB_OUTPUT
           "do_release=$($doRelease.ToString().ToLower())" >> $env:GITHUB_OUTPUT
-          Write-Host "Build $tag (version $version) — sync=$doSync release=$doRelease branche=$branch"
+          Write-Host "Build $tag (version $version) - sync=$doSync release=$doRelease branch=$branch"
 
       # ---------------------------------------------------------------------
-      # 1. Récupération du contenu depuis ToolsBoXMachine
+      # 1. Fetch the content from ToolsBoXMachine
       # ---------------------------------------------------------------------
-      - name: Synchroniser contents/ depuis ToolsBoXMachine
+      - name: Sync contents/ from ToolsBoXMachine
         if: steps.vars.outputs.do_sync == 'true'
         shell: pwsh
         run: .\scripts\sync-contents.ps1 -SourceRepo "https://github.com/${{ env.TBX_SOURCE_REPO }}.git" -Branch "${{ steps.vars.outputs.branch }}"
@@ -100,47 +100,47 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A contents
-          if ($LASTEXITCODE -ne 0) { throw "git add a échoué" }
+          if ($LASTEXITCODE -ne 0) { throw "git add failed" }
 
           git diff --cached --quiet
           if ($LASTEXITCODE -eq 0) {
-            Write-Host "Aucun changement dans contents/ (source inchangée)."
+            Write-Host "No changes in contents/ (source unchanged)."
             exit 0
           }
 
-          git commit -m "chore(contents): synchro ToolsBoXMachine ${{ steps.vars.outputs.tag }}" | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "git commit a échoué" }
+          git commit -m "chore(contents): sync ToolsBoXMachine ${{ steps.vars.outputs.tag }}" | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
 
           try {
             git push
           }
           catch {
-            Write-Host "Push refusé, rebase puis nouvelle tentative."
+            Write-Host "Push rejected, rebasing then retrying."
             git pull --rebase
             git push
           }
-          if ($LASTEXITCODE -ne 0) { throw "git push a échoué" }
+          if ($LASTEXITCODE -ne 0) { throw "git push failed" }
 
       # ---------------------------------------------------------------------
-      # 2. Préparation du build (assets web, icônes, version)
+      # 2. Build preparation (web assets, icons, version)
       # ---------------------------------------------------------------------
-      - name: Préparer les assets web (embarqués dans le binaire)
+      - name: Prepare web assets (embedded into the binary)
         shell: pwsh
         run: .\scripts\prepare-web.ps1
 
-      - name: Générer les icônes depuis le logo du contenu
+      - name: Generate icons from the content logo
         shell: pwsh
         run: .\scripts\generate-icons.ps1
 
-      - name: Injecter la version du build
+      - name: Inject the build version
         shell: pwsh
         run: |
           $version = "${{ steps.vars.outputs.version }}"
           $config = "app\src-tauri\tauri.conf.json"
-          if (-not (Test-Path $config)) { throw "$config introuvable" }
+          if (-not (Test-Path $config)) { throw "$config not found" }
 
-          # Remplacement ciblé (pas de réécriture du JSON : serde_json de Tauri
-          # refuse les fichiers avec BOM UTF-8).
+          # Targeted replacement (no full JSON rewrite: Tauri's serde_json
+          # rejects files with a UTF-8 BOM).
           $raw = [IO.File]::ReadAllText($config)
           $new = [regex]::Replace(
             $raw,
@@ -148,12 +148,12 @@ jobs:
             ('"version": "' + $version + '"'),
             [Text.RegularExpressions.RegexOptions]::IgnoreCase,
             [TimeSpan]::FromSeconds(5))
-          if ($new -eq $raw) { throw "Impossible d'injecter la version $version dans $config" }
+          if ($new -eq $raw) { throw "Cannot inject version $version into $config" }
           [IO.File]::WriteAllText($config, $new, (New-Object Text.UTF8Encoding($false)))
 
           $check = [regex]::Match([IO.File]::ReadAllText($config), '"version"\s*:\s*"([^"]*)"').Groups[1].Value
-          if ($check -ne $version) { throw "Vérification échouée : version lue = '$check'" }
-          Write-Host "Version injectée : $check"
+          if ($check -ne $version) { throw "Check failed: version read = '$check'" }
+          Write-Host "Version injected: $check"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -168,18 +168,18 @@ jobs:
         with:
           workspaces: app/src-tauri
 
-      - name: Installer les dépendances JS (CLI Tauri)
+      - name: Install JS dependencies (Tauri CLI)
         working-directory: app
         run: npm install --no-audit --no-fund
 
       # ---------------------------------------------------------------------
-      # 3. Build de l'installeur NSIS x64
+      # 3. Build the x64 NSIS installer
       # ---------------------------------------------------------------------
-      - name: Compiler (release) + bundler NSIS
+      - name: Build (release) + NSIS bundler
         working-directory: app
         run: npm run build
 
-      - name: Collecter l'installeur
+      - name: Collect the installer
         id: installer
         shell: pwsh
         run: |
@@ -187,14 +187,14 @@ jobs:
 
           $candidates = Get-ChildItem -Path "app\src-tauri\target" -Recurse -Filter "*-setup.exe" -ErrorAction SilentlyContinue |
             Sort-Object LastWriteTime -Descending
-          if (-not $candidates) { throw "Aucun installeur NSIS produit dans app\src-tauri\target" }
+          if (-not $candidates) { throw "No NSIS installer produced under app\src-tauri\target" }
 
           $setup = $candidates[0]
           Copy-Item $setup.FullName (Join-Path "artifacts" $env:SETUP_ASSET) -Force
-          Write-Host "Installeur : $($setup.Name) ($([math]::Round($setup.Length/1MB,1)) Mo)"
+          Write-Host "Installer: $($setup.Name) ($([math]::Round($setup.Length/1MB,1)) MB)"
 
           $display = (Get-AuthenticodeSignature $setup.FullName)
-          Write-Host "Signature Authenticode : $($display.Status)"
+          Write-Host "Authenticode signature: $($display.Status)"
 
           $sha = (Get-FileHash (Join-Path "artifacts" $env:SETUP_ASSET) -Algorithm SHA256).Hash.ToLower()
           "$sha  $env:SETUP_ASSET" | Set-Content (Join-Path "artifacts" "checksums.txt") -Encoding utf8
@@ -203,51 +203,20 @@ jobs:
           "source_name=$($setup.Name)" >> $env:GITHUB_OUTPUT
 
       # ---------------------------------------------------------------------
-      # 4. Notes de release
+      # 4. Release notes (installation only)
       # ---------------------------------------------------------------------
-      - name: Préparer les notes de release
+      - name: Prepare the release notes
         if: steps.vars.outputs.do_release == 'true'
         id: notes
         shell: pwsh
         run: |
           $tag = "${{ steps.vars.outputs.tag }}"
-          $version = "${{ steps.vars.outputs.version }}"
-          $date = "${{ steps.vars.outputs.date }}"
-          $base = "https://github.com/${{ github.repository }}/releases/latest/download"
-
-          $source = "inconnue"
-          $syncFile = Join-Path "contents" ".sync-info.json"
-          if (Test-Path $syncFile) {
-            try {
-              $info = Get-Content $syncFile -Raw | ConvertFrom-Json
-              $sha = $info.sourceSha
-              if ($sha -and $sha.Length -ge 7) { $sha = $sha.Substring(0, 7) }
-              $source = "$($info.source) @ $sha ($($info.branch)), synchronisé le $($info.syncedAtUtc)"
-            }
-            catch {}
-          }
-
-          $backtick = '`'
           $lines = @(
-            "## $backtick ToolsBoXApp $tag"
-            ""
-            "| | |"
-            "|---|---|"
-            "| **Version** | $backtick$version$backtick |"
-            "| **Contenu** | $source |"
-            "| **Installeur** | [$backtick$env:SETUP_ASSET$backtick]($base/$env:SETUP_ASSET) |"
-            "| **SHA256** | $backtick${{ steps.installer.outputs.sha256 }}$backtick |"
+            "## ToolsBoXApp $tag"
             ""
             "### Installation"
-            "- Télécharger $backtick$env:SETUP_ASSET$backtick ci-dessous puis l'exécuter (installation pour l'utilisateur courant, aucun droit admin requis)."
-            "- L'application détecte automatiquement les versions plus récentes au démarrage."
-            ""
-            "### Notes"
-            "- Le contenu HTML (pages et outils) est embarqué dans l'exécutable : aucune connexion n'est nécessaire pour utiliser l'app."
-            "- L'installeur n'est pas signé : Windows affiche un avertissement SmartScreen au premier lancement."
-            ""
-            "### Build"
-            "Workflow $backtick${{ github.workflow }}$backtick — run [$backtick${{ github.run_number }}$backtick](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) — $date"
+            "- Download $env:SETUP_ASSET below and run it (per-user install, no admin rights needed)."
+            "- The app checks for newer versions automatically on startup."
           )
 
           "body<<RELEASE_NOTES_EOF" >> $env:GITHUB_OUTPUT
@@ -255,9 +224,9 @@ jobs:
           "RELEASE_NOTES_EOF" >> $env:GITHUB_OUTPUT
 
       # ---------------------------------------------------------------------
-      # 5. Publication de la release
+      # 5. Publish the release
       # ---------------------------------------------------------------------
-      - name: Publier la release ${{ steps.vars.outputs.tag }}
+      - name: Publish the ${{ steps.vars.outputs.tag }} release
         if: steps.vars.outputs.do_release == 'true'
         uses: softprops/action-gh-release@v2
         with:

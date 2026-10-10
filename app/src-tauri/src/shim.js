@@ -1,15 +1,16 @@
 /*!
- * ToolBoXApp — shim injecté dans chaque page du WebView.
+ * ToolsBoXApp - shim injected into every page loaded by the WebView.
  *
- * Responsabilités :
- *   1. Téléchargements : les pages génèrent des blobs (`<a download href="blob:…">`)
- *      que le WebView ne sait pas enregistrer -> boîte de dialogue native.
- *   2. Liens externes : ouverts dans le navigateur système, jamais dans l'app.
- *   3. Presse-papier : repli via `execCommand('copy')` si l'API moderne échoue.
- *   4. Mises à jour : interrogation de la dernière release GitHub au démarrage
- *      (au maximum toutes les 6 h) + bandeau « Mettre à jour ».
+ * Responsibilities:
+ *   1. Downloads: pages generate blobs (`<a download href="blob:...">`)
+ *      that the WebView cannot save -> native save dialog.
+ *   2. External links: opened in the system browser, never inside the app.
+ *   3. Clipboard: fallback through `execCommand('copy')` when the modern
+ *      API fails.
+ *   4. Updates: checks the latest GitHub release on startup (at most once
+ *      every 6 h) + "Update" banner.
  *
- * Le shim est ré-injecté à chaque navigation : il est idempotent par document.
+ * The shim is re-injected on every navigation: it is idempotent per document.
  */
 (function () {
   'use strict';
@@ -20,7 +21,7 @@
   window.__TBX_SHIM_ACTIVE__ = true;
 
   /* ------------------------------------------------------------------ *
-   *  Accès à l'IPC Tauri (window.__TAURI__ ou __TAURI_INTERNALS__)
+   *  Access to the Tauri IPC (window.__TAURI__ or __TAURI_INTERNALS__)
    * ------------------------------------------------------------------ */
   function ipc() {
     var global = window.__TAURI__;
@@ -37,7 +38,7 @@
   function invoke(command, payload, options) {
     var api = ipc();
     if (!api) {
-      return Promise.reject(new Error('IPC Tauri indisponible'));
+      return Promise.reject(new Error('Tauri IPC unavailable'));
     }
     try {
       return Promise.resolve(api.invoke(command, payload, options));
@@ -49,12 +50,12 @@
 
   function log() {
     if (window.console && console.log) {
-      console.log.apply(console, ['[ToolBoXApp]'].concat([].slice.call(arguments)));
+      console.log.apply(console, ['[ToolsBoXApp]'].concat([].slice.call(arguments)));
     }
   }
 
   /* ------------------------------------------------------------------ *
-   *  Styles (injectés une fois)
+   *  Styles (injected once)
    * ------------------------------------------------------------------ */
   var CSS = [
     '[data-tbx-ui]{all:initial;box-sizing:border-box;font-family:"Segoe UI",system-ui,sans-serif;}',
@@ -139,12 +140,12 @@
     box.setAttribute('data-tbx-update', '');
 
     var title = document.createElement('strong');
-    title.textContent = 'Mise à jour disponible';
+    title.textContent = 'Update available';
     box.appendChild(title);
 
     var line = document.createElement('span');
     line.textContent = 'Version ' + (info.latestVersion || '?')
-      + ' (actuelle : ' + (info.currentVersion || '?') + ')';
+      + ' (current: ' + (info.currentVersion || '?') + ')';
     box.appendChild(line);
 
     var actions = document.createElement('div');
@@ -153,12 +154,12 @@
     var later = document.createElement('button');
     later.type = 'button';
     later.className = 'tbx-ghost';
-    later.textContent = 'Plus tard';
+    later.textContent = 'Later';
     later.addEventListener('click', function () {
       try {
         window.localStorage.setItem(STORAGE_SKIPPED, new Date().toDateString());
       }
-      catch (error) { /* stockage indisponible */ }
+      catch (error) { /* storage unavailable */ }
       if (box.parentNode) {
         box.parentNode.removeChild(box);
       }
@@ -167,15 +168,15 @@
     var update = document.createElement('button');
     update.type = 'button';
     update.className = 'tbx-primary';
-    update.textContent = 'Mettre à jour';
+    update.textContent = 'Update';
     update.addEventListener('click', function () {
       update.disabled = true;
-      update.textContent = 'Ouverture…';
+      update.textContent = 'Opening...';
       var target = info.downloadUrl || info.releaseUrl;
       invoke('open_external', { url: target })
         .catch(function (error) {
-          log('open_external a échoué :', error);
-          toast('Ouverture impossible : ' + error);
+          log('open_external failed:', error);
+          toast('Could not open: ' + error);
         })
         .then(function () {
           if (box.parentNode) {
@@ -189,14 +190,14 @@
     box.appendChild(actions);
     document.body.appendChild(box);
 
-    log('mise à jour disponible :', info.latestVersion, '->', info.downloadUrl || info.releaseUrl);
+    log('update available:', info.latestVersion, '->', info.downloadUrl || info.releaseUrl);
   }
 
   /* ------------------------------------------------------------------ *
-   *  1. Téléchargements (blob: et data:)
+   *  1. Downloads (blob: and data:)
    * ------------------------------------------------------------------ */
   function fileNameFromUrl(url, fallback) {
-    var name = fallback || 'fichier';
+    var name = fallback || 'file';
     if (!url || url.indexOf('data:') !== 0) {
       return name;
     }
@@ -240,22 +241,22 @@
       })
       .then(function (saved) {
         if (typeof saved === 'string' && saved) {
-          toast('Enregistré : ' + saved, 'Ouvrir le dossier', function () {
+          toast('Saved: ' + saved, 'Open folder', function () {
             invoke('reveal_file', { path: saved }).catch(function (error) {
-              log('reveal_file a échoué :', error);
+              log('reveal_file failed:', error);
             });
           });
         }
         return saved;
       })
       .catch(function (error) {
-        log('save_download a échoué :', error);
-        toast('Enregistrement impossible : ' + error);
+        log('save_download failed:', error);
+        toast('Could not save: ' + error);
       });
   }
 
   /* ------------------------------------------------------------------ *
-   *  2 & 3. Clics : téléchargements et liens externes
+   *  2 & 3. Clicks: downloads and external links
    * ------------------------------------------------------------------ */
   function closestAnchor(node) {
     while (node && node !== document.body) {
@@ -283,7 +284,7 @@
       return;
     }
 
-    // 1. Téléchargement demandé par la page : <a download href="…">
+    // 1. Download requested by the page: <a download href="...">
     var wantsDownload = anchor.hasAttribute('download')
       || anchor.hasAttribute('data-tbx-download');
     var isRemote = /^(https?:|mailto:)/i.test(url);
@@ -292,7 +293,7 @@
       event.preventDefault();
       var name = anchor.getAttribute('download')
         || anchor.getAttribute('data-tbx-download')
-        || 'fichier';
+        || 'file';
       if (!/\.[a-z0-9]{1,5}$/i.test(name)) {
         name = fileNameFromUrl(url, name);
       }
@@ -300,7 +301,7 @@
       return;
     }
 
-    // 2. Lien externe ou ouverture dans un nouvel onglet -> navigateur système
+    // 2. External link or new-tab opener -> system browser
     var target = anchor.getAttribute('target');
     if (!isRemote && target !== '_blank') {
       return;
@@ -308,12 +309,12 @@
 
     event.preventDefault();
     invoke('open_external', { url: url }).catch(function (error) {
-      log('open_external a échoué :', error);
+      log('open_external failed:', error);
     });
   }
 
   /* ------------------------------------------------------------------ *
-   *  4. Presse-papier (repli)
+   *  4. Clipboard (fallback)
    * ------------------------------------------------------------------ */
   function legacyCopy(text) {
     return new Promise(function (resolve, reject) {
@@ -329,7 +330,7 @@
       try {
         area.setSelectionRange(0, area.value.length);
       }
-      catch (error) { /* ignoré */ }
+      catch (error) { /* ignored */ }
 
       var ok = false;
       try {
@@ -345,7 +346,7 @@
         resolve();
       }
       else {
-        reject(new Error('copie refusée par le système'));
+        reject(new Error('copy refused by the system'));
       }
     });
   }
@@ -376,12 +377,12 @@
     var nativeOpen = window.open;
     window.open = function (url, name, features) {
       if (typeof url === 'string' && (url.indexOf('blob:') === 0 || url.indexOf('data:') === 0)) {
-        saveFromUrl(url, fileNameFromUrl(url, 'fichier'));
+        saveFromUrl(url, fileNameFromUrl(url, 'file'));
         return null;
       }
       if (typeof url === 'string' && /^(https?:|mailto:)/i.test(url)) {
         invoke('open_external', { url: url }).catch(function (error) {
-          log('open_external a échoué :', error);
+          log('open_external failed:', error);
         });
         return null;
       }
@@ -393,7 +394,7 @@
   }
 
   /* ------------------------------------------------------------------ *
-   *  6. Vérification des mises à jour
+   *  6. Update checks
    * ------------------------------------------------------------------ */
   var STORAGE_KEY = 'toolbox.update.lastCheck';
   var STORAGE_SKIPPED = 'toolbox.update.skipped';
@@ -418,7 +419,7 @@
     try {
       window.localStorage.setItem(STORAGE_KEY, String(now));
     }
-    catch (error) { /* stockage indisponible : on continue */ }
+    catch (error) { /* storage unavailable: carry on */ }
 
     invoke('check_update')
       .then(function (info) {
@@ -426,19 +427,19 @@
           return;
         }
         if (info.error) {
-          log('check_update :', info.error);
+          log('check_update:', info.error);
         }
         if (info.available) {
           showUpdateBanner(info);
         }
       })
       .catch(function (error) {
-        log('check_update a échoué :', error);
+        log('check_update failed:', error);
       });
   }
 
   /* ------------------------------------------------------------------ *
-   *  Amorçage
+   *  Bootstrap
    * ------------------------------------------------------------------ */
   function boot() {
     injectStyles();
@@ -446,7 +447,7 @@
     patchWindowOpen();
     document.addEventListener('click', onClick, true);
     checkForUpdate();
-    log('shim actif sur', window.location.pathname);
+    log('shim active on', window.location.pathname);
   }
 
   if (document.readyState === 'loading') {

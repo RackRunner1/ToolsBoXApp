@@ -1,22 +1,22 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Génère les icônes de l'app Tauri (PNG + ICO multi-résolutions).
+    Generates the Tauri app icons (PNG + multi-resolution ICO).
 
 .DESCRIPTION
-    Source par défaut : contents/.assets/logo/logo.png (le logo du contenu
-    synchronisé), avec repli sur fav.png. Si aucune source n'existe, une
-    icône de secours est dessinée (le build ne casse jamais).
+    Default source: contents/.assets/logo/logo.png (the synced content
+    logo), falling back to fav.png. When no source exists, a fallback
+    icon is drawn (the build never breaks).
 
-    Sortie : app/src-tauri/icons/
+    Output: app/src-tauri/icons/
         32x32.png, 128x128.png, 128x128@2x.png (256), icon.png (512)
-        icon.ico   (16/24/32/48/64/128/256, PNG compressé, Vista+)
+        icon.ico   (16/24/32/48/64/128/256, PNG-compressed, Vista+)
 
 .PARAMETER Source
-    Chemin vers un PNG source (carré de préférence).
+    Path to a source PNG (square preferred).
 
 .PARAMETER OutDir
-    Dossier de sortie (par défaut : <repo>/app/src-tauri/icons).
+    Output folder (default: <repo>/app/src-tauri/icons).
 
 .EXAMPLE
     .\scripts\generate-icons.ps1
@@ -45,15 +45,15 @@ if (-not $Source) {
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
 
 # ---------------------------------------------------------------------------
-# Bitmap source (ou icône de secours dessinée)
+# Source bitmap (or drawn fallback icon)
 # ---------------------------------------------------------------------------
 $srcBitmap = $null
 if ($Source -and (Test-Path $Source)) {
-    Write-Host "Source de l'icône : $Source"
+    Write-Host "Icon source: $Source"
     $srcBitmap = New-Object System.Drawing.Bitmap $Source
 }
 else {
-    Write-Host "Aucun logo trouvé dans contents/.assets/logo/ -> icône de secours générée."
+    Write-Host "No logo found in contents/.assets/logo/ - generating a fallback icon."
     $srcBitmap = New-Object System.Drawing.Bitmap 512, 512
     $g = [System.Drawing.Graphics]::FromImage($srcBitmap)
     $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
@@ -81,7 +81,7 @@ else {
 
 try {
     # -----------------------------------------------------------------------
-    # Redimensionnement "contain" sur carré transparent
+    # "Contain" resize on a transparent square
     # -----------------------------------------------------------------------
     function New-SquareIcon {
         param([int]$Size)
@@ -110,7 +110,7 @@ try {
     }
 
     # -----------------------------------------------------------------------
-    # PNG pour Tauri
+    # PNGs for Tauri
     # -----------------------------------------------------------------------
     $pngs = [ordered]@{
         '32x32.png'          = 32
@@ -126,7 +126,7 @@ try {
     }
 
     # -----------------------------------------------------------------------
-    # ICO multi-résolutions (entrées PNG, supportées depuis Vista)
+    # Multi-resolution ICO (PNG entries, supported since Vista)
     # -----------------------------------------------------------------------
     $icoSizes = @(16, 24, 32, 48, 64, 128, 256)
     $entries = @()
@@ -142,22 +142,22 @@ try {
     $icoPath = Join-Path $OutDir 'icon.ico'
     $ms = New-Object System.IO.MemoryStream
     $bw = New-Object System.IO.BinaryWriter($ms)
-    $bw.Write([UInt16]0)                  # réservé
-    $bw.Write([UInt16]1)                  # 1 = icône
-    $bw.Write([UInt16]$entries.Count)     # nombre d'images
+    $bw.Write([UInt16]0)                  # reserved
+    $bw.Write([UInt16]1)                  # 1 = icon
+    $bw.Write([UInt16]$entries.Count)     # image count
 
     $offset = 6 + (16 * $entries.Count)
     foreach ($e in $entries) {
         $size = $e[0]; $data = $e[1]
         $dim = if ($size -ge 256) { 0 } else { $size }
-        $bw.Write([Byte]$dim)             # largeur (0 = 256)
-        $bw.Write([Byte]$dim)             # hauteur
-        $bw.Write([Byte]0)                # nombre de couleurs
-        $bw.Write([Byte]0)                # réservé
-        $bw.Write([UInt16]1)              # plans de couleur
-        $bw.Write([UInt16]32)             # bits par pixel
-        $bw.Write([UInt32]$data.Length)   # taille des données
-        $bw.Write([UInt32]$offset)        # offset des données
+        $bw.Write([Byte]$dim)             # width (0 = 256)
+        $bw.Write([Byte]$dim)             # height
+        $bw.Write([Byte]0)                # color count
+        $bw.Write([Byte]0)                # reserved
+        $bw.Write([UInt16]1)              # color planes
+        $bw.Write([UInt16]32)             # bits per pixel
+        $bw.Write([UInt32]$data.Length)   # data size
+        $bw.Write([UInt32]$offset)        # data offset
         $offset += $data.Length
     }
     foreach ($e in $entries) { $bw.Write($e[1]) }
@@ -165,8 +165,8 @@ try {
     [IO.File]::WriteAllBytes($icoPath, $ms.ToArray())
     $bw.Close(); $ms.Dispose()
 
-    Write-Host "OK : icônes générées dans $OutDir"
-    Get-ChildItem $OutDir -File | ForEach-Object { "  $($_.Name) ($([math]::Round($_.Length/1KB,1)) Ko)" }
+    Write-Host "OK: icons generated in $OutDir"
+    Get-ChildItem $OutDir -File | ForEach-Object { "  $($_.Name) ($([math]::Round($_.Length/1KB,1)) KB)" }
 }
 finally {
     if ($srcBitmap) { $srcBitmap.Dispose() }

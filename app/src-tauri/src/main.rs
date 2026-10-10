@@ -1,13 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! ToolBoXApp — coquille desktop (WebView2) autour du contenu ToolsBoXMachine.
+//! ToolsBoXApp - desktop shell (WebView2) around the ToolsBoXMachine content.
 //!
-//! - La fenêtre principale charge `index.html` depuis les assets embarqués
+//! - The main window loads `index.html` from the embedded assets
 //!     (frontendDist -> app/web/).
-//! - La navigation entre les fichiers HTML se fait naturellement dans le WebView.
-//! - Un script d'initialisation (shim.js) est injecté à chaque chargement de
-//!   page pour gérer : téléchargements, liens externes, presse-papier et la
-//!   vérification des mises à jour.
+//! - Navigation between HTML files happens naturally inside the WebView.
+//! - An initialization script (shim.js) is injected on every page load to
+//!   handle: downloads, external links, clipboard and update checks.
 
 mod download;
 mod shim;
@@ -24,8 +23,8 @@ fn main() {
             download::open_external
         ])
         .setup(|app| {
-            // La fenêtre est déclarée avec "create": false dans tauri.conf.json
-            // afin de pouvoir y attacher le script d'initialisation.
+            // The window is declared with "create": false in tauri.conf.json
+            // so the initialization script can be attached to it.
             let window_config = app
                 .handle()
                 .config()
@@ -33,7 +32,7 @@ fn main() {
                 .windows
                 .first()
                 .cloned()
-                .ok_or("aucune fenêtre déclarée dans app.windows (tauri.conf.json)")?;
+                .ok_or("no window declared in app.windows (tauri.conf.json)")?;
 
             tauri::WebviewWindowBuilder::from_config(app.handle(), &window_config)?
                 .initialization_script(shim::SHIM_JS)
@@ -42,5 +41,5 @@ fn main() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("erreur au démarrage de ToolBoXApp");
+        .expect("error while running ToolsBoXApp");
 }

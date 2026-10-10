@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capacités de la fenêtre principale de ToolsBoXApp : IPC de base, mises à jour, enregistrement de fichiers et ouverture de liens externes.",
+  "description": "Main window capabilities of ToolsBoXApp: core IPC, updates, file saving and external link opening.",
   "windows": ["main"],
   "permissions": [
     "core:default",

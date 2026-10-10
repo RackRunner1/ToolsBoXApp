@@ -4,21 +4,22 @@
 /target/
 app/src-tauri/target/
 app/src-tauri/gen/
+app/src-tauri/Cargo.lock
 
-# Dépendances JS (CLI Tauri)
+# JS dependencies (Tauri CLI)
 node_modules/
 package-lock.json
 
-# Contenu web préparé pour le build (copié depuis contents/ par
-# scripts/prepare-web.ps1, régénéré à chaque build)
+# Web content staged for the build (copied from contents/ by
+# scripts/prepare-web.ps1, regenerated on every build)
 app/web/*
 !app/web/.gitkeep
 
-# Icônes générées depuis le logo du contenu (scripts/generate-icons.ps1)
+# Icons generated from the content logo (scripts/generate-icons.ps1)
 app/src-tauri/icons/
 
 # ---------------------------------------------------------------------------
-# Artefacts locaux / brouillons
+# Local artifacts / scratch files
 # ---------------------------------------------------------------------------
 artifacts/
 certs/

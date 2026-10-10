@@ -1,29 +1,28 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Synchronise le dossier contents/ depuis ToolsBoXMachine.
+    Syncs the contents/ folder from ToolsBoXMachine.
 
 .DESCRIPTION
-    Récupère le contenu du dépôt source (clone léger, ou clone local via
-    -SourcePath) puis recopie les dossiers/fichiers connus dans contents/
-    avec robocopy /MIR (miroir : les fichiers supprimés en amont sont
-    retirés localement).
-    Écrit contents/.sync-info.json (SHA source + horodatage).
+    Fetches the source repository content (shallow clone, or a local clone
+    through -SourcePath) then mirrors the known folders/files into contents/
+    with robocopy /MIR (files deleted upstream are removed locally).
+    Writes contents/.sync-info.json (source SHA + timestamp).
 
 .PARAMETER SourceRepo
-    URL du dépôt source.
+    URL of the source repository.
 
 .PARAMETER Branch
-    Branche du dépôt source.
+    Branch of the source repository.
 
 .PARAMETER Dest
-    Dossier de destination (par défaut : <repo>/contents).
+    Destination folder (default: <repo>/contents).
 
 .PARAMETER SourcePath
-    Dossier local déjà cloné (évite le clone réseau).
+    Already-cloned local folder (skips the network clone).
 
 .PARAMETER KeepClone
-    Conserve le clone temporaire (débogage).
+    Keeps the temporary clone (debugging).
 
 .EXAMPLE
     .\scripts\sync-contents.ps1
@@ -45,9 +44,9 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path $PSScriptRoot -Parent
 if (-not $Dest) { $Dest = Join-Path $RepoRoot 'contents' }
 
-# Dossiers synchronisés en miroir
+# Folders synced as mirrors
 $SyncDirs  = @('.assets', 'og', 'pages', 'public', 'tools', 'ui')
-# Fichiers synchronisés à la racine
+# Files synced at the root
 $SyncFiles = @('index.html', 'style.css', 'llms.txt', 'robots.txt', 'sitemap.xml')
 
 if (-not (Test-Path $Dest)) {
@@ -55,57 +54,57 @@ if (-not (Test-Path $Dest)) {
 }
 
 # ---------------------------------------------------------------------------
-# 1. Obtention de la source
+# 1. Get the source
 # ---------------------------------------------------------------------------
 $tmp = $null
 if ($SourcePath) {
     if (-not (Test-Path (Join-Path $SourcePath 'index.html'))) {
-        throw "SourcePath invalide : index.html est absent de '$SourcePath'."
+        throw "Invalid SourcePath: index.html is missing from '$SourcePath'."
     }
     $src = (Resolve-Path $SourcePath).Path
-    Write-Host "Source locale : $src"
+    Write-Host "Local source: $src"
 }
 else {
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ('tbxm-src-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
-    Write-Host "Clonage de $SourceRepo ($Branch) -> $tmp"
+    Write-Host "Cloning $SourceRepo ($Branch) -> $tmp"
     git clone --depth 1 --branch $Branch $SourceRepo $tmp 2>&1 | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "git clone a échoué (code $LASTEXITCODE)" }
+    if ($LASTEXITCODE -ne 0) { throw "git clone failed (code $LASTEXITCODE)" }
     if (-not (Test-Path (Join-Path $tmp 'index.html'))) {
-        throw "Le clone semble invalide : index.html est absent."
+        throw "The clone looks invalid: index.html is missing."
     }
     $src = $tmp
 }
 
 try {
     # -----------------------------------------------------------------------
-    # 2. SHA source
+    # 2. Source SHA
     # -----------------------------------------------------------------------
-    $sha = 'inconnu'
+    $sha = 'unknown'
     if (Test-Path (Join-Path $src '.git')) {
         $out = (git -C $src rev-parse HEAD) 2>$null
         if ($LASTEXITCODE -eq 0 -and $out) { $sha = $out.Trim() }
     }
-    Write-Host "Commit source : $sha"
+    Write-Host "Source commit: $sha"
 
     # -----------------------------------------------------------------------
-    # 3. Miroir des dossiers
+    # 3. Mirror the folders
     # -----------------------------------------------------------------------
     foreach ($d in $SyncDirs) {
         $s = Join-Path $src $d
         if (-not (Test-Path $s)) {
-            Write-Host "  (dossier absent de la source, ignoré) $d"
+            Write-Host "  (folder missing from source, skipped) $d"
             continue
         }
         $dst = Join-Path $Dest $d
         $null = robocopy $s $dst /MIR /NFL /NDL /NJH /NJS /NP /XF .gitkeep
-        if ($LASTEXITCODE -ge 8) { throw "robocopy a échoué sur '$d' (code $LASTEXITCODE)" }
-        # robocopy renvoie 1 à 7 en cas de succès (fichiers copiés) : on
-        # remet le code à 0, sinon l'étape CI est marquée en échec.
+        if ($LASTEXITCODE -ge 8) { throw "robocopy failed on '$d' (code $LASTEXITCODE)" }
+        # robocopy returns 1-7 on success (files copied): reset the code to
+        # 0 or the CI step is reported as failed.
         $global:LASTEXITCODE = 0
     }
 
     # -----------------------------------------------------------------------
-    # 4. Fichiers racine
+    # 4. Root files
     # -----------------------------------------------------------------------
     foreach ($f in $SyncFiles) {
         $s = Join-Path $src $f
@@ -113,13 +112,13 @@ try {
             Copy-Item $s (Join-Path $Dest $f) -Force
         }
         else {
-            Write-Host "  (fichier absent de la source, ignoré) $f"
+            Write-Host "  (file missing from source, skipped) $f"
         }
     }
 
     # -----------------------------------------------------------------------
-    # 5. Métadonnées de synchro (idempotent : on ne réécrit que si la
-    #    source a changé, pour éviter un commit quotidien sans changement)
+    # 5. Sync metadata (idempotent: only rewritten when the source changed,
+    #    to avoid a daily commit with no changes)
     # -----------------------------------------------------------------------
     $infoPath = Join-Path $Dest '.sync-info.json'
     $unchanged = $false
@@ -134,7 +133,7 @@ try {
     }
 
     if ($unchanged) {
-        Write-Host ".sync-info.json inchangé (même commit source)."
+        Write-Host ".sync-info.json unchanged (same source commit)."
     }
     else {
         $info = [ordered]@{
@@ -149,9 +148,9 @@ try {
     }
 
     $fileCount = (Get-ChildItem $Dest -Recurse -File -Force).Count
-    Write-Host "OK : contents/ synchronisé ($fileCount fichiers, source @ $sha)"
-    # Garde-fou : s'assurer que le script se termine avec un code 0
-    # (aucune commande native ne doit laisser un $LASTEXITCODE non nul).
+    Write-Host "OK: contents/ synced ($fileCount files, source @ $sha)"
+    # Safety net: make sure the script exits with code 0 (no native
+    # command may leave a non-zero $LASTEXITCODE behind).
     $global:LASTEXITCODE = 0
 }
 finally {

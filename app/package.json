@@ -2,7 +2,7 @@
   "name": "toolsboxapp",
   "private": true,
   "version": "2026.1.1",
-  "description": "Coquille desktop (Tauri) autour du contenu ToolsBoXMachine",
+  "description": "Desktop shell (Tauri) around the ToolsBoXMachine content",
   "scripts": {
     "sync": "pwsh -NoProfile -ExecutionPolicy Bypass -File ../../scripts/sync-contents.ps1",
     "web": "pwsh -NoProfile -ExecutionPolicy Bypass -File ../../scripts/prepare-web.ps1",

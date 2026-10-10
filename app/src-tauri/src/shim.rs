@@ -1,3 +1,3 @@
-/// Script injecté dans chaque page chargée par le WebView (téléchargements,
-/// liens externes, presse-papier, bandeau de mise à jour).
+/// Script injected into every page loaded by the WebView (downloads,
+/// external links, clipboard, update banner).
 pub const SHIM_JS: &str = include_str!("shim.js");

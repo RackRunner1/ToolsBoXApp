@@ -1,19 +1,19 @@
-//! Commandes utilitaires appelées par le shim injecté dans les pages HTML.
+//! Utility commands called by the shim injected into HTML pages.
 //!
-//! - `save_download` : intercepte les clics sur `<a download>` (les pages
-//!   génèrent des blobs : QR codes, images floutées…) et les enregistre via
-//!   la boîte de dialogue native, le WebView ne gérant pas les téléchargements.
-//! - `reveal_file`   : ouvre l'explorateur sur un fichier enregistré.
-//! - `open_external` : ouvre un lien http(s)/mailto dans le navigateur système.
+//! - `save_download`: intercepts clicks on `<a download>` (pages generate
+//!   blobs: QR codes, blurred images...) and saves them through the native
+//!   dialog, as the WebView cannot handle downloads.
+//! - `reveal_file`: opens Explorer on a saved file.
+//! - `open_external`: opens an http(s)/mailto link in the system browser.
 
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
-/// En-tête utilisé par le shim pour transmettre le nom de fichier (encodé).
+/// Header used by the shim to pass the file name (encoded).
 const FILENAME_HEADER: &str = "x-tbx-filename";
 
-/// Décode un composant percent-encodé (noms de fichiers non ASCII).
+/// Decodes a percent-encoded component (non-ASCII file names).
 fn decode_component(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
@@ -35,7 +35,7 @@ fn decode_component(value: &str) -> String {
     String::from_utf8(out).unwrap_or_else(|_| value.to_string())
 }
 
-/// Extension du nom de fichier, si elle est simple (utilisée pour le filtre).
+/// Extension of the file name, when simple (used for the dialog filter).
 fn file_extension(name: &str) -> Option<String> {
     let extension = std::path::Path::new(name)
         .extension()
@@ -49,18 +49,18 @@ fn file_extension(name: &str) -> Option<String> {
     }
 }
 
-/// Enregistre un fichier envoyé par la page (corps brut de l'invoke).
+/// Saves a file sent by the page (raw invoke body).
 ///
-/// Retourne `None` si l'utilisateur annule la boîte de dialogue.
+/// Returns `None` when the user cancels the dialog.
 #[tauri::command]
 pub async fn save_download(
     app: AppHandle,
     request: tauri::ipc::Request<'_>,
 ) -> Result<Option<String>, String> {
     let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
-        return Err("contenu brut attendu pour save_download".to_string());
+        return Err("expected raw body for save_download".to_string());
     };
-    // `body()` rend une référence : on copie les octets pour les donner à la tâche.
+    // `body()` returns a reference: copy the bytes for the background task.
     let data = data.clone();
 
     let file_name = request
@@ -70,67 +70,66 @@ pub async fn save_download(
         .map(decode_component)
         .map(|name| name.trim().to_string())
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "telechargement.bin".to_string());
+        .unwrap_or_else(|| "download.bin".to_string());
 
-    // Ne jamais bloquer le thread du WebView : boîte de dialogue + écriture
-    // disque dans une tâche dédiée.
+    // Never block the WebView thread: dialog + disk write run on a worker task.
     let saved = tauri::async_runtime::spawn_blocking(move || -> Result<Option<String>, String> {
         let mut builder = app
             .dialog()
             .file()
-            .set_title("Enregistrer le fichier")
+            .set_title("Save file")
             .set_file_name(file_name.clone());
 
         if let Some(extension) = file_extension(&file_name) {
             let label = format!("{} (*.{})", extension.to_uppercase(), extension);
             builder = builder.add_filter(label, &[extension.as_str()]);
         }
-        let chosen = builder.add_filter("Tous les fichiers", &["*"]).blocking_save_file();
+        let chosen = builder.add_filter("All files", &["*"]).blocking_save_file();
 
         let Some(chosen) = chosen else { return Ok(None) };
         let Some(path) = chosen.as_path().map(std::path::Path::to_path_buf) else {
-            return Err("emplacement invalide".to_string());
+            return Err("invalid location".to_string());
         };
 
-        std::fs::write(&path, &data).map_err(|error| format!("écriture impossible : {error}"))?;
+        std::fs::write(&path, &data).map_err(|error| format!("cannot write file: {error}"))?;
         Ok(Some(path.to_string_lossy().to_string()))
     })
     .await
-    .map_err(|error| format!("enregistrement interrompu : {error}"))??;
+    .map_err(|error| format!("save interrupted: {error}"))??;
 
     Ok(saved)
 }
 
-/// Ouvre l'explorateur Windows avec le fichier sélectionné.
+/// Opens Windows Explorer with the file selected.
 #[tauri::command]
 pub fn reveal_file(path: String) -> Result<(), String> {
     let target = std::path::PathBuf::from(&path);
     if !target.is_file() {
-        return Err(format!("fichier introuvable : {path}"));
+        return Err(format!("file not found: {path}"));
     }
 
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // DETACHED_PROCESS | CREATE_NO_WINDOW : pas de console qui clignote.
+        // CREATE_NO_WINDOW: no flashing console window.
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         std::process::Command::new("explorer.exe")
             .raw_arg(format!("/select,\"{path}\""))
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
-            .map_err(|error| format!("explorer : {error}"))?;
+            .map_err(|error| format!("explorer: {error}"))?;
     }
 
     #[cfg(not(windows))]
     {
         let _ = &target;
-        return Err("reveal_file n'est disponible que sur Windows".to_string());
+        return Err("reveal_file is only available on Windows".to_string());
     }
 
     Ok(())
 }
 
-/// Ouvre une URL dans le navigateur par défaut (schémas autorisés uniquement).
+/// Opens a URL in the default browser (allowed schemes only).
 #[tauri::command]
 pub fn open_external(app: AppHandle, url: String) -> Result<(), String> {
     let allowed = url.starts_with("https://")
@@ -138,12 +137,12 @@ pub fn open_external(app: AppHandle, url: String) -> Result<(), String> {
         || url.starts_with("mailto:");
 
     if !allowed {
-        return Err(format!("schéma non autorisé : {url}"));
+        return Err(format!("scheme not allowed: {url}"));
     }
 
     app.opener()
         .open_url(url, None::<&str>)
-        .map_err(|error| format!("ouverture impossible : {error}"))
+        .map_err(|error| format!("cannot open URL: {error}"))
 }
 
 #[cfg(test)]
@@ -161,7 +160,7 @@ mod tests {
     fn detects_simple_extensions() {
         assert_eq!(file_extension("image.PNG").as_deref(), Some("png"));
         assert_eq!(file_extension("archive.tar.gz").as_deref(), Some("gz"));
-        assert_eq!(file_extension("sans-extension"), None);
-        assert_eq!(file_extension("trop.longueextension"), None);
+        assert_eq!(file_extension("no-extension"), None);
+        assert_eq!(file_extension("too.longextension"), None);
     }
 }

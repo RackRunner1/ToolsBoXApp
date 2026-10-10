@@ -1,20 +1,20 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Prépare les assets web embarqués dans l'app Tauri.
+    Prepares the web assets embedded in the Tauri app.
 
 .DESCRIPTION
-    Copie contents/ vers app/web/ (le frontendDist configuré dans
-    app/src-tauri/tauri.conf.json). Tous les fichiers trouvés sont embarqués
-    dans le binaire au build : l'exe produit est autonome.
+    Copies contents/ to app/web/ (the frontendDist configured in
+    app/src-tauri/tauri.conf.json). Every file found there is embedded into
+    the binary at build time: the produced exe is standalone.
 
-    À exécuter après scripts/sync-contents.ps1 et avant `tauri build`.
+    Run after scripts/sync-contents.ps1 and before `tauri build`.
 
 .PARAMETER ContentsDir
-    Dossier source (par défaut : <repo>/contents).
+    Source folder (default: <repo>/contents).
 
 .PARAMETER WebDir
-    Dossier destination (par défaut : <repo>/app/web).
+    Destination folder (default: <repo>/app/web).
 
 .EXAMPLE
     .\scripts\prepare-web.ps1
@@ -32,30 +32,30 @@ if (-not $ContentsDir) { $ContentsDir = Join-Path $RepoRoot 'contents' }
 if (-not $WebDir)      { $WebDir      = Join-Path $RepoRoot 'app\web' }
 
 if (-not (Test-Path (Join-Path $ContentsDir 'index.html'))) {
-    throw "index.html absent de '$ContentsDir' - lance d'abord : .\scripts\sync-contents.ps1"
+    throw "index.html is missing from '$ContentsDir' - run first: .\scripts\sync-contents.ps1"
 }
 
 # ---------------------------------------------------------------------------
-# Reconstruction complète de app/web/
+# Full rebuild of app/web/
 # ---------------------------------------------------------------------------
 if (Test-Path $WebDir) { Remove-Item $WebDir -Recurse -Force }
 New-Item -ItemType Directory -Path $WebDir -Force | Out-Null
 
 $null = robocopy $ContentsDir $WebDir /E /NFL /NDL /NJH /NJS /NP
-if ($LASTEXITCODE -ge 8) { throw "robocopy a échoué (code $LASTEXITCODE)" }
-# robocopy renvoie 1 à 7 en cas de succès (fichiers copiés) : on remet le
-# code à 0, sinon l'étape CI est marquée en échec.
+if ($LASTEXITCODE -ge 8) { throw "robocopy failed (code $LASTEXITCODE)" }
+# robocopy returns 1-7 on success (files copied): reset the code to 0 or
+# the CI step is reported as failed.
 $global:LASTEXITCODE = 0
 
 # ---------------------------------------------------------------------------
-# Vérifications minimales
+# Minimal checks
 # ---------------------------------------------------------------------------
 foreach ($f in @('index.html', 'style.css')) {
-    if (-not (Test-Path (Join-Path $WebDir $f))) { throw "$f est absent de app/web/ - contenu incomplet ?" }
+    if (-not (Test-Path (Join-Path $WebDir $f))) { throw "$f is missing from app/web/ - incomplete content?" }
 }
 
 $files = Get-ChildItem $WebDir -Recurse -File -Force
 $sizeMb = [math]::Round((($files | Measure-Object Length -Sum).Sum / 1MB), 2)
-Write-Host "OK : app/web/ prêt ($($files.Count) fichiers, $sizeMb Mo) - embed dans le binaire au build"
-# Garde-fou : s'assurer que le script se termine avec un code 0.
+Write-Host "OK: app/web/ ready ($($files.Count) files, $sizeMb MB) - embedded into the binary at build time"
+# Safety net: make sure the script exits with code 0.
 $global:LASTEXITCODE = 0

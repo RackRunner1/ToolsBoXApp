@@ -1,14 +1,14 @@
 [package]
 name = "toolsboxapp"
 version = "2026.1.1"
-description = "ToolBoXApp - boite a outils desktop embarquant le contenu de ToolsBoXMachine"
+description = "ToolsBoXApp - desktop toolbox bundling the ToolsBoXMachine content"
 authors = ["RackRunner"]
 license = "Unlicense"
 repository = "https://github.com/RackRunner1/ToolsBoXApp"
 edition = "2021"
 rust-version = "1.77.2"
 
-# Projet autonome : ce crate est sa propre racine de workspace.
+# Standalone project: this crate is its own workspace root.
 [workspace]
 
 [build-dependencies]
@@ -23,12 +23,12 @@ serde_json = "1"
 reqwest = { version = "=0.13.5", default-features = false, features = ["json", "rustls"] }
 
 [features]
-# Utilise par `tauri build` en release pour eviter l'avertissement sur le
-# protocole custom non securise (les assets sont deja servis en https).
+# Used by `tauri build` in release to avoid the warning about the insecure
+# custom protocol (assets are already served over https).
 default = ["custom-protocol"]
 custom-protocol = []
 
 [profile.release]
-strip = true      # binaire plus petit
-lto = true        # optimise (build un peu plus long)
+strip = true      # smaller binary
+lto = true        # optimized (slightly longer build)
 

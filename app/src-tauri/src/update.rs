@@ -1,13 +1,13 @@
-//! Vérification des mises à jour via l'API GitHub Releases.
+//! Update checks through the GitHub Releases API.
 //!
-//! Au démarrage, le shim JS appelle `check_update`. La commande interroge
-//! `https://api.github.com/repos/<owner>/<repo>/releases/latest` et compare
-//! le tag publié à la version courante de l'app.
+//! On startup, the JS shim calls `check_update`. The command queries
+//! `https://api.github.com/repos/<owner>/<repo>/releases/latest` and compares
+//! the published tag with the current app version.
 //!
-//! Schéma de versionnage (posé par le workflow) :
-//!   - version de l'app  : `AAAA.M.J`   (semver, ex. 2026.10.10)
-//!   - tag de la release : `AAAAMMJJ`   (ex. 20261010)
-//! Les deux formes sont normalisées en triplet (A, M, J) avant comparaison.
+//! Versioning scheme (set by the workflow):
+//!   - app version    : `YYYY.M.D`   (semver, e.g. 2026.10.10)
+//!   - release tag    : `YYYYMMDD`   (e.g. 20261010)
+//! Both shapes are normalized to a (Y, M, D) triplet before comparing.
 
 use serde::{Deserialize, Serialize};
 
@@ -15,20 +15,20 @@ const API_BASE: &str = "https://api.github.com";
 const FALLBACK_REPO: &str = "RackRunner1/ToolsBoXApp";
 const TIMEOUT_SECS: u64 = 12;
 
-/// Résultat envoyé au frontend pour afficher la bannière de mise à jour.
+/// Result sent to the frontend to render the update banner.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
-    /// `true` uniquement si la release publiée est strictement plus récente.
+    /// `true` only when the published release is strictly newer.
     pub available: bool,
     pub current_version: String,
     pub latest_version: String,
-    /// Page de la release la plus récente.
+    /// Page of the latest release.
     pub release_url: String,
-    /// Lien direct vers l'installeur NSIS x64, s'il est publié.
+    /// Direct link to the x64 NSIS installer, when published.
     pub download_url: Option<String>,
     pub published_at: Option<String>,
-    /// Renseigné si la vérification a échoué (hors ligne, quota, etc.).
+    /// Set when the check failed (offline, rate limit, ...).
     pub error: Option<String>,
 }
 
@@ -48,7 +48,7 @@ struct GitHubRelease {
     assets: Vec<GitHubAsset>,
 }
 
-/// Déduit `owner/repo` depuis `bundle.homepage` (tauri.conf.json).
+/// Derives `owner/repo` from `bundle.homepage` (tauri.conf.json).
 fn repo_path(app: &tauri::AppHandle) -> String {
     let homepage = app
         .config()
@@ -72,12 +72,12 @@ fn repo_path(app: &tauri::AppHandle) -> String {
     }
 }
 
-/// Normalise une version en triplet de nombres comparables.
+/// Normalizes a version into a comparable triplet of numbers.
 ///
-/// - `20261010`      -> `[2026, 10, 10]` (AAAAMMJJ)
+/// - `20261010`      -> `[2026, 10, 10]` (YYYYMMDD)
 /// - `v2026.10.10`   -> `[2026, 10, 10]`
 /// - `2026.1.1`      -> `[2026, 1, 1]`
-/// - le reste        -> les nombres trouvés, dans l'ordre
+/// - anything else   -> the numbers found, in order
 fn version_tuple(version: &str) -> Vec<u64> {
     let s = version.trim().trim_start_matches(['v', 'V']);
 
@@ -92,7 +92,7 @@ fn version_tuple(version: &str) -> Vec<u64> {
         .collect()
 }
 
-/// `true` si `candidate` est strictement plus récent que `current`.
+/// `true` when `candidate` is strictly newer than `current`.
 fn is_newer(candidate: &str, current: &str) -> bool {
     let candidate = version_tuple(candidate);
     let current = version_tuple(current);
@@ -109,7 +109,7 @@ fn is_newer(candidate: &str, current: &str) -> bool {
     false
 }
 
-/// Interroge GitHub Releases et compare avec la version courante.
+/// Queries GitHub Releases and compares with the current version.
 #[tauri::command]
 pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
     let fallback = env!("TBX_VERSION").to_string();
@@ -124,8 +124,8 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
     };
 
     let repo = repo_path(&app);
-    // Lien de repli (page "latest") utilisé quand l'API est injoignable.
-    // En cas de succès, on utilisera l'URL exacte de la release (html_url).
+    // Fallback link ("latest" page) used when the API is unreachable.
+    // On success, the exact release URL (html_url) is used instead.
     let fallback_url = format!("https://github.com/{repo}/releases/latest");
     let api_url = format!("{API_BASE}/repos/{repo}/releases/latest");
 
@@ -133,10 +133,10 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
         .user_agent(format!("ToolsBoXApp/{current} (+{fallback_url})"))
         .timeout(std::time::Duration::from_secs(TIMEOUT_SECS))
         .build()
-        .map_err(|error| format!("client HTTP : {error}"))?;
+        .map_err(|error| format!("HTTP client: {error}"))?;
 
-    // Une panne réseau ne doit jamais gêner l'utilisateur : on renvoie une
-    // information « pas de mise à jour » accompagnée du message d'erreur.
+    // A network failure must never bother the user: return a
+    // "no update" result together with the error message.
     let response = match client.get(&api_url).send().await {
         Ok(response) => response,
         Err(error) => {
@@ -174,7 +174,7 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
                 release_url: fallback_url,
                 download_url: None,
                 published_at: None,
-                error: Some(format!("réponse illisible : {error}")),
+                error: Some(format!("unreadable response: {error}")),
             });
         }
     };
@@ -187,7 +187,7 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
 
     let available = is_newer(&latest_version, &current);
 
-    // L'installeur NSIS x64 est l'asset à privilégier.
+    // The x64 NSIS installer is the preferred asset.
     let download_url = release
         .assets
         .iter()
