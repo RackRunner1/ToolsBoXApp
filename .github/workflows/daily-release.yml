@@ -13,13 +13,6 @@ on:
         description: "Synchroniser contents/ depuis ToolsBoXMachine"
         type: boolean
         default: true
-  pull_request:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "scripts/**"
-      - "install-app.ps1"
-      - ".github/workflows/**"
 
 permissions:
   contents: write
@@ -50,8 +43,6 @@ jobs:
           $doSync = $false; $doRelease = $false
           switch ($env:GITHUB_EVENT_NAME) {
             'schedule'          { $doSync = $true;  $doRelease = $true  }
-            'push'              { $doSync = $true;  $doRelease = $true  }
-            'pull_request'      { $doSync = $false; $doRelease = $false }
             'workflow_dispatch' {
               $doSync    = "${{ inputs.do_sync }}"    -ne 'false'
               $doRelease = "${{ inputs.do_release }}" -ne 'false'
