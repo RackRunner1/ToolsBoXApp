@@ -17,10 +17,29 @@
 
     <InvariantGlobalization>true</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <DefaultLanguage>en-US</DefaultLanguage>
+
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <GenerateAppxPackageOnBuild>true</GenerateAppxPackageOnBuild>
+    <GenerateAppInstallerFile>false</GenerateAppInstallerFile>
+    <GenerateTemporaryStoreCertificate>false</GenerateTemporaryStoreCertificate>
+    <AppxSymbolPackageEnabled>false</AppxSymbolPackageEnabled>
+
+    <AppxPackageSigningEnabled Condition="'$(SignCertPath)' != ''">true</AppxPackageSigningEnabled>
+    <PackageCertificateKeyFile Condition="'$(SignCertPath)' != ''">$(SignCertPath)</PackageCertificateKeyFile>
+    <PackageCertificatePassword Condition="'$(SignCertPassword)' != ''">$(SignCertPassword)</PackageCertificatePassword>
+
+    <AppxPackageDir>$(MSBuildThisFileDirectory)..\ToolsBoXApp.Package\AppX\</AppxPackageDir>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2957.106" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="Assets\**" />
+    <Content Include="Assets\**" />
   </ItemGroup>
 
   <ItemGroup>

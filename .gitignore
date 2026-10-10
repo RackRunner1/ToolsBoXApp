@@ -8,7 +8,6 @@ AppPackages/
 *.appxsym*
 *.msix.upload
 *.msix.encrypted
-*.wapproj.user
 
 certs/*
 !certs/.gitkeep

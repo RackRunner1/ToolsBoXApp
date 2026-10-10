@@ -135,7 +135,7 @@ jobs:
         shell: pwsh
         run: |
           $ver = "${{ steps.vars.outputs.version }}"
-          $m = "src\ToolsBoXApp.Package\Package.appxmanifest"
+          $m = "src\ToolsBoXApp\Package.appxmanifest"
           $xml = [IO.File]::ReadAllText($m)
           $new = [regex]::Replace(
             $xml,
@@ -160,7 +160,7 @@ jobs:
       - name: Compiler et signer le package MSIX (x64)
         shell: pwsh
         run: |
-          & "${{ steps.msb.outputs.path }}" "src\ToolsBoXApp.Package\ToolsBoXApp.Package.csproj" `
+          & "${{ steps.msb.outputs.path }}" "src\ToolsBoXApp\ToolsBoXApp.csproj" `
             /t:Restore,Build `
             /p:Configuration=Release `
             /p:Platform=x64 `
