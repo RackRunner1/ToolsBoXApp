@@ -196,10 +196,8 @@ jobs:
 
       - name: Compiler et signer le package MSIX (x64)
         shell: pwsh
-        env:
-          PFX_PATH: ${{ env.PFX_PATH }}
-          PFX_PASS: ${{ env.PFX_PASS }}
         run: |
+          # $env:PFX_PATH / $env:PFX_PASS viennent de GITHUB_ENV (step précédent)
           & "${{ steps.msb.outputs.path }}" "src\ToolsBoXApp.Package\ToolsBoXApp.Package.wapproj" `
             /t:Restore,Build `
             /p:Configuration=Release `
@@ -212,6 +210,7 @@ jobs:
 
       # --------------------------------------------------------- vérifications
       - name: Vérifier le package produit
+        id: verify
         shell: pwsh
         run: |
           $msix = Get-ChildItem -Path "src\ToolsBoXApp.Package\AppX" -Filter "ToolsBoXApp_x64.msix" -Recurse |
@@ -261,10 +260,11 @@ jobs:
             "PKG_DEPS=$($deps -join ' ')" >> $env:GITHUB_ENV
           } finally { $zip.Dispose() }
 
-          # 3) Cohérence de version
-          if ($env:PKG_VERSION -ne "${{ steps.vars.outputs.version }}") {
-            throw "Version du paquet ($env:PKG_VERSION) différente de la version attendue (${{ steps.vars.outputs.version }})."
+          # 3) Cohérence de version (comparaison directe sur le manifeste lu)
+          if ($id.Version -ne "${{ steps.vars.outputs.version }}") {
+            throw "Version du paquet ($($id.Version)) différente de la version attendue (${{ steps.vars.outputs.version }})."
           }
+          "msix=$($msix.FullName)" >> $env:GITHUB_OUTPUT
 
       # ------------------------------------------------- génération .appinstaller
       - name: Générer le .appinstaller
@@ -378,7 +378,7 @@ $(Get-Content "$pwd\artifacts\checksums.txt" -Raw)
           make_latest: true
           fail_on_unmatched_files: false
           files: |
-            ${{ env.MSIX_PATH }}
+            ${{ steps.verify.outputs.msix }}
             artifacts/ToolsBoXApp.appinstaller
             artifacts/ToolsBoXApp.cer
             artifacts/checksums.txt

@@ -49,8 +49,14 @@
         <!-- ======== Panneau principal ======== -->
         <Grid>
 
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="300" MinWidth="180" />
+                <ColumnDefinition Width="4" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
             <!-- ---- Explorateur contents/ ---- -->
-            <DockPanel Width="300" MinWidth="180" Background="#0f172a">
+            <DockPanel Grid.Column="0" Background="#0f172a">
                 <Border DockPanel.Dock="Top" Background="#1e293b" Padding="12,8">
                     <TextBlock Text="Contenus" Foreground="#e2e8f0" FontWeight="SemiBold" />
                 </Border>
@@ -74,7 +80,7 @@
                 </TreeView>
             </DockPanel>
 
-            <GridSplitter Width="4" HorizontalAlignment="Center"
+            <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Stretch"
                           Background="#334155" />
 
             <!-- ---- Navigateur (moteur de rendu du site) ---- -->

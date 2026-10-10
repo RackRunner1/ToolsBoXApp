@@ -77,6 +77,8 @@ public partial class MainWindow : Window
                 Placeholder.Visibility = Visibility.Hidden;
                 Browser.Visibility = Visibility.Visible;
             }
+            BtnBack.IsEnabled = Browser.CanGoBack;
+            BtnForward.IsEnabled = Browser.CanGoForward;
             var title = core.DocumentTitle;
             if (!string.IsNullOrWhiteSpace(title))
                 Title = $"ToolsBoX — {title}";
