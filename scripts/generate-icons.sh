@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Generates the Tauri app icons with `tauri icon`.
 #
-# Source: contents/.assets/logo/logo.png (the synced content logo),
-# falling back to fav.png. When no source exists, a fallback icon is drawn
+# Source: contents/.assets/logo/fav.png (the app icon),
+# falling back to logo.png. When no source exists, a fallback icon is drawn
 # (requires python3 + Pillow) so the build never breaks.
 # Output: app/src-tauri/icons/
 #
@@ -24,7 +24,7 @@ done
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [ -z "$SOURCE" ]; then
-  for candidate in "$REPO_ROOT/contents/.assets/logo/logo.png" "$REPO_ROOT/contents/.assets/logo/fav.png"; do
+  for candidate in "$REPO_ROOT/contents/.assets/logo/fav.png" "$REPO_ROOT/contents/.assets/logo/logo.png"; do
     if [ -f "$candidate" ]; then SOURCE="$candidate"; break; fi
   done
 fi
