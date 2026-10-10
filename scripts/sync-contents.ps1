@@ -84,6 +84,9 @@ try {
 
   $fileCount = (Get-ChildItem $Dest -Recurse -File).Count
   Write-Host "OK: contents/ synchronisé ($fileCount fichiers, source @ $sha)"
+  # robocopy renvoie 1-7 en cas de succès (fichiers copiés) : forcer un code
+  # de sortie 0, sinon GitHub Actions marque l'étape comme échouée.
+  $global:LASTEXITCODE = 0
 }
 finally {
   if ($KeepClone) { Write-Debug "Clone conservé : $Tmp" }
