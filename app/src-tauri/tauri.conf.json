@@ -68,7 +68,7 @@
       "endpoints": [
         "https://github.com/RackRunner1/ToolsBoXApp/releases/latest/download/latest.json"
       ],
-      "pubkey": "REPLACE-WITH-YOUR-PUBLIC-KEY"
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNFMTlDNTI2OEYyNzdGOTUKUldTVmZ5ZVBKc1VaUGgyNVVuK3pVTUtUbmJoQkdpK1R0bExmMlNNNStGL1VtSndDYjNKL2N4YlMK"
     }
   }
 }
