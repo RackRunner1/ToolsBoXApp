@@ -1,3 +1,6 @@
 # Shell scripts must keep LF endings on every platform (shebang breaks
 # with CRLF on Linux CI runners, regardless of core.autocrlf).
 *.sh text eol=lf
+# Same for the .desktop Handlebars template (a stray CR would leak into
+# the rendered desktop entry values).
+*.desktop text eol=lf
