@@ -1,0 +1,17 @@
+{
+  "name": "toolsboxapp",
+  "private": true,
+  "version": "2026.1.1",
+  "description": "Coquille desktop (Tauri) autour du contenu ToolsBoXMachine",
+  "scripts": {
+    "sync": "pwsh -NoProfile -ExecutionPolicy Bypass -File ../../scripts/sync-contents.ps1",
+    "web": "pwsh -NoProfile -ExecutionPolicy Bypass -File ../../scripts/prepare-web.ps1",
+    "icons": "pwsh -NoProfile -ExecutionPolicy Bypass -File ../../scripts/generate-icons.ps1",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "rebuild": "npm run web && npm run icons && npm run build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.2"
+  }
+}

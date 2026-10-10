@@ -1,0 +1,28 @@
+# ---------------------------------------------------------------------------
+# Rust / Tauri
+# ---------------------------------------------------------------------------
+/target/
+app/src-tauri/target/
+app/src-tauri/gen/
+
+# Dépendances JS (CLI Tauri)
+node_modules/
+package-lock.json
+
+# Contenu web préparé pour le build (copié depuis contents/ par
+# scripts/prepare-web.ps1, régénéré à chaque build)
+app/web/*
+!app/web/.gitkeep
+
+# Icônes générées depuis le logo du contenu (scripts/generate-icons.ps1)
+app/src-tauri/icons/
+
+# ---------------------------------------------------------------------------
+# Artefacts locaux / brouillons
+# ---------------------------------------------------------------------------
+artifacts/
+certs/
+*.log
+*.user
+.DS_Store
+Thumbs.db
