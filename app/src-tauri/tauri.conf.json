@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "ToolsBoXApp",
+  "productName": "toolsboxapp",
   "version": "2026.1.1",
   "identifier": "com.rackrunner.toolsboxapp",
   "build": {
@@ -53,6 +53,7 @@
         "release": "1",
         "epoch": 0,
         "depends": ["webkit2gtk4.1", "libsoup3", "gtk3", "curl"],
+        "desktopTemplate": "toolsboxapp.desktop",
         "files": {
           "/usr/bin/tbxa": "../../cli/target/release/tbxa"
         }
