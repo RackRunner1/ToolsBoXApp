@@ -118,17 +118,35 @@ try {
     }
 
     # -----------------------------------------------------------------------
-    # 5. Métadonnées de synchro
+    # 5. Métadonnées de synchro (idempotent : on ne réécrit que si la
+    #    source a changé, pour éviter un commit quotidien sans changement)
     # -----------------------------------------------------------------------
-    $info = [ordered]@{
-        source      = 'RackRunner1/ToolsBoXMachine'
-        sourceRepo  = $SourceRepo
-        sourcePath  = if ($SourcePath) { (Resolve-Path $SourcePath).Path } else { $null }
-        sourceSha   = $sha
-        branch      = $Branch
-        syncedAtUtc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-    } | ConvertTo-Json
-    [IO.File]::WriteAllText((Join-Path $Dest '.sync-info.json'), $info)
+    $infoPath = Join-Path $Dest '.sync-info.json'
+    $unchanged = $false
+    if (Test-Path $infoPath) {
+        try {
+            $existing = Get-Content $infoPath -Raw | ConvertFrom-Json
+            $unchanged = ($existing.sourceSha -eq $sha) -and
+                         ($existing.branch -eq $Branch) -and
+                         ($existing.sourceRepo -eq $SourceRepo)
+        }
+        catch { $unchanged = $false }
+    }
+
+    if ($unchanged) {
+        Write-Host ".sync-info.json inchangé (même commit source)."
+    }
+    else {
+        $info = [ordered]@{
+            source      = 'RackRunner1/ToolsBoXMachine'
+            sourceRepo  = $SourceRepo
+            sourcePath  = if ($SourcePath) { (Resolve-Path $SourcePath).Path } else { $null }
+            sourceSha   = $sha
+            branch      = $Branch
+            syncedAtUtc = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        } | ConvertTo-Json
+        [IO.File]::WriteAllText($infoPath, $info)
+    }
 
     $fileCount = (Get-ChildItem $Dest -Recurse -File -Force).Count
     Write-Host "OK : contents/ synchronisé ($fileCount fichiers, source @ $sha)"
