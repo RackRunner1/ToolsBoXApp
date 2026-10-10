@@ -121,6 +121,9 @@ function matches(element, selector) {
   if (/^\[data-tbx-update\]$/.test(selector)) {
     return element.hasAttribute('data-tbx-update');
   }
+  if (/^\[data-tbx-toast\]$/.test(selector)) {
+    return element.hasAttribute('data-tbx-toast');
+  }
   return false;
 }
 
@@ -169,20 +172,26 @@ function createWorld(options) {
     navigator: { clipboard },
     localStorage: storage,
     console,
-    setTimeout: (fn) => setTimeout(fn, 0),
+    setTimeout: (fn, ms) => setTimeout(fn, typeof ms === 'number' ? ms : 0),
     clearTimeout: (id) => clearTimeout(id),
     location: { pathname: '/index.html', href: 'https://tauri.localhost/index.html' }
   };
   window.window = window;
   window.self = window;
 
+  const eventListeners = {};
+
   if (opts.updateResult !== undefined) {
     const updateResult = opts.updateResult;
     const savedPath = opts.savedPath || 'C:\\Users\\test\\Downloads\\file.png';
+    const rejected = opts.rejectCommands || [];
     window.__TAURI__ = {
       core: {
         invoke: (command, payload, options2) => {
           invokes.push({ command, payload, options: options2 });
+          if (rejected.indexOf(command) !== -1) {
+            return Promise.reject(new Error(command + ' failed (test)'));
+          }
           if (command === 'check_update') {
             return Promise.resolve(updateResult);
           }
@@ -190,6 +199,12 @@ function createWorld(options) {
             return Promise.resolve(savedPath);
           }
           return Promise.resolve(opts.invokeResults && opts.invokeResults[command]);
+        }
+      },
+      event: {
+        listen: (name, handler) => {
+          (eventListeners[name] = eventListeners[name] || []).push(handler);
+          return Promise.resolve(() => {});
         }
       }
     };
@@ -214,7 +229,7 @@ function createWorld(options) {
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
 
-  return { sandbox, document, invokes, window };
+  return { sandbox, document, invokes, window, eventListeners };
 }
 
 function run(world) {
@@ -228,6 +243,40 @@ function run(world) {
 
 function isUint8Array(value) {
   return Object.prototype.toString.call(value) === '[object Uint8Array]';
+}
+
+function fireEvent(world, name, payload) {
+  const handlers = world.eventListeners[name] || [];
+  for (const handler of handlers) {
+    handler({ event: name, payload });
+  }
+}
+
+function updateBannerInfo() {
+  return {
+    available: true,
+    currentVersion: '2026.10.10',
+    latestVersion: '20261011',
+    releaseUrl: 'https://github.com/RackRunner1/ToolsBoXApp/releases/latest',
+    downloadUrl: null,
+    error: null
+  };
+}
+
+function updateButtonOf(world) {
+  const banner = world.document.body.querySelector('[data-tbx-update]');
+  if (!banner) {
+    return { banner: null, button: null };
+  }
+  const buttons = banner.children[banner.children.length - 1].children;
+  return { banner, button: buttons[buttons.length - 1] };
+}
+
+function click(element) {
+  const handlers = (element.listeners && element.listeners['click']) || [];
+  for (const handler of handlers) {
+    handler({});
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -344,8 +393,65 @@ async function main() {
     }
   }
 
+  await inAppUpdateSuite();
+
   console.log('\n' + passed + ' passed, ' + failed + ' failed');
   process.exit(failed === 0 ? 0 : 1);
+}
+
+async function inAppUpdateSuite() {
+  /* -------------------------------------------------------------- *
+   *  5. In-app update flow
+   * -------------------------------------------------------------- */
+  console.log('\n[5] In-app update flow');
+  {
+    const world = run(createWorld({ updateResult: updateBannerInfo() }));
+    await tick();
+
+    const found = updateButtonOf(world);
+    check('update banner shown', !!found.banner);
+    click(found.button);
+    await tick(8);
+
+    check('apply_update invoked on Update click',
+      world.invokes.some((entry) => entry.command === 'apply_update'));
+    check('button disabled while updating', found.button.disabled === true);
+
+    fireEvent(world, 'tbx-update-progress', { downloaded: 50, total: 100 });
+    check('progress shown on the button', found.button.textContent === 'Downloading 50%',
+      found.button.textContent);
+
+    fireEvent(world, 'tbx-update-progress', { downloaded: 100, total: 100 });
+    check('installing shown at 100%', found.button.textContent === 'Installing...',
+      found.button.textContent);
+  }
+
+  /* -------------------------------------------------------------- *
+   *  6. Failed update falls back to a manual-install toast
+   * -------------------------------------------------------------- */
+  console.log('\n[6] Failed update fallback');
+  {
+    const world = run(createWorld({
+      updateResult: updateBannerInfo(),
+      rejectCommands: ['apply_update']
+    }));
+    await tick();
+
+    const found = updateButtonOf(world);
+    click(found.button);
+    await tick(8);
+
+    check('button re-enabled after failure',
+      found.button.disabled === false && found.button.textContent === 'Update',
+      found.button.textContent);
+    const toast = world.document.body.querySelector('[data-tbx-toast]');
+    check('manual-install toast shown', !!toast);
+    if (toast) {
+      check('toast mentions manual install',
+        toast.children[0].textContent.indexOf('manually') !== -1,
+        toast.children[0].textContent);
+    }
+  }
 }
 
 main().catch((error) => {

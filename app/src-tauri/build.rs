@@ -1,6 +1,6 @@
 // Commands exposed to the frontend. Each command auto-generates an
 // `allow-<snake-name>` permission referenced in capabilities/default.json.
-const APP_COMMANDS: &[&str] = &["check_update", "save_download", "reveal_file", "open_external"];
+const APP_COMMANDS: &[&str] = &["check_update", "apply_update", "save_download", "reveal_file", "open_external"];
 
 fn main() {
     // Version injected by CI (YYYY.M.D shape, e.g. 2026.10.10).

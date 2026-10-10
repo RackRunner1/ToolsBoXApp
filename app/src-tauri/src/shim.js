@@ -130,6 +130,14 @@
     timer = window.setTimeout(close, typeof ttl === 'number' ? ttl : 7000);
   }
 
+  function eventApi() {
+    var global = window.__TAURI__;
+    if (global && global.event && typeof global.event.listen === 'function') {
+      return global.event;
+    }
+    return null;
+  }
+
   function showUpdateBanner(info) {
     if (!document.body || document.querySelector('[data-tbx-update]')) {
       return;
@@ -171,18 +179,7 @@
     update.textContent = 'Update';
     update.addEventListener('click', function () {
       update.disabled = true;
-      update.textContent = 'Opening...';
-      var target = info.downloadUrl || info.releaseUrl;
-      invoke('open_external', { url: target })
-        .catch(function (error) {
-          log('open_external failed:', error);
-          toast('Could not open: ' + error);
-        })
-        .then(function () {
-          if (box.parentNode) {
-            box.parentNode.removeChild(box);
-          }
-        });
+      startUpdate(update, info);
     });
 
     actions.appendChild(later);
@@ -191,6 +188,58 @@
     document.body.appendChild(box);
 
     log('update available:', info.latestVersion, '->', info.downloadUrl || info.releaseUrl);
+  }
+
+  /* Downloads, verifies and installs the update in place (the app exits
+   * once the installer takes over and restarts the app itself). */
+  function startUpdate(updateButton, info) {
+    updateButton.textContent = 'Downloading 0%';
+
+    var events = eventApi();
+    var unlisten = null;
+    function stopListening() {
+      if (typeof unlisten === 'function') {
+        try {
+          unlisten();
+        }
+        catch (error) { /* ignored */ }
+        unlisten = null;
+      }
+    }
+
+    if (events) {
+      events.listen('tbx-update-progress', function (event) {
+        var progress = (event && event.payload) || {};
+        if (typeof progress.downloaded === 'number'
+          && typeof progress.total === 'number'
+          && progress.total > 0) {
+          if (progress.downloaded >= progress.total) {
+            updateButton.textContent = 'Installing...';
+          }
+          else {
+            updateButton.textContent = 'Downloading '
+              + Math.floor((progress.downloaded / progress.total) * 100) + '%';
+          }
+        }
+      }).then(function (fn) {
+        unlisten = fn;
+      }).catch(function () { /* progress display is best-effort */ });
+    }
+
+    invoke('apply_update').then(function () {
+      // Rarely reached: the app usually exits during install.
+      updateButton.textContent = 'Installing...';
+    }).catch(function (error) {
+      stopListening();
+      log('apply_update failed:', error);
+      updateButton.disabled = false;
+      updateButton.textContent = 'Update';
+      toast('Update failed. You can still install it manually.', 'Open releases', function () {
+        invoke('open_external', { url: info.releaseUrl }).catch(function (openError) {
+          log('open_external failed:', openError);
+        });
+      });
+    });
   }
 
   /* ------------------------------------------------------------------ *

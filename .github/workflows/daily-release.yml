@@ -173,11 +173,27 @@ jobs:
         run: npm install --no-audit --no-fund
 
       # ---------------------------------------------------------------------
-      # 3. Build the x64 NSIS installer
+      # 3. Build the x64 NSIS installer (+ signed updater artifacts when
+      #    the signing key is configured)
       # ---------------------------------------------------------------------
       - name: Build (release) + NSIS bundler
         working-directory: app
-        run: npm run build
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $tauriArgs = @('tauri', 'build')
+          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+            Write-Host "Signing key present: updater artifacts will be generated and signed."
+            $tauriArgs += '--config'
+            $tauriArgs += '{"bundle":{"createUpdaterArtifacts":true}}'
+          }
+          else {
+            Write-Host "No signing key configured: regular installer only (in-app updates stay dormant in this build)."
+          }
+          npx @tauriArgs
+          if ($LASTEXITCODE -ne 0) { throw "tauri build failed (code $LASTEXITCODE)" }
 
       - name: Collect the installer
         id: installer
@@ -202,6 +218,22 @@ jobs:
           "sha256=$sha" >> $env:GITHUB_OUTPUT
           "source_name=$($setup.Name)" >> $env:GITHUB_OUTPUT
 
+          $updaterFiles = Get-ChildItem -Path "app\src-tauri\target\release\bundle" -Recurse -Include "*.nsis.zip", "*.nsis.zip.sig", "latest.json" -ErrorAction SilentlyContinue
+          foreach ($file in $updaterFiles) {
+            Copy-Item $file.FullName (Join-Path "artifacts" $file.Name) -Force
+            Write-Host "Updater artifact: $($file.Name) ($([math]::Round($file.Length/1KB,1)) KB)"
+          }
+          if ($updaterFiles) {
+            $latestJson = Join-Path "artifacts" "latest.json"
+            if (Test-Path $latestJson) {
+              Write-Host "latest.json content:"
+              Get-Content $latestJson -Raw | Write-Host
+            }
+          }
+          else {
+            Write-Host "No updater artifacts found (signing key not configured?)."
+          }
+
       # ---------------------------------------------------------------------
       # 4. Release notes (installation only)
       # ---------------------------------------------------------------------
@@ -215,8 +247,8 @@ jobs:
             "## ToolsBoXApp $tag"
             ""
             "### Installation"
-            "- Download $env:SETUP_ASSET below and run it (per-user install, no admin rights needed)."
-            "- The app checks for newer versions automatically on startup."
+            "- New install: download $env:SETUP_ASSET below and run it (per-user install, no admin rights needed)."
+            "- Update: the app downloads and installs newer versions by itself (with your confirmation)."
           )
 
           "body<<RELEASE_NOTES_EOF" >> $env:GITHUB_OUTPUT
@@ -238,3 +270,6 @@ jobs:
           files: |
             artifacts/${{ env.SETUP_ASSET }}
             artifacts/checksums.txt
+            artifacts/*.nsis.zip
+            artifacts/*.nsis.zip.sig
+            artifacts/latest.json

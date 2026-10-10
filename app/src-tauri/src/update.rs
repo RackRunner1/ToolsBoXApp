@@ -1,229 +1,130 @@
-//! Update checks through the GitHub Releases API.
+//! In-app updates through the Tauri updater plugin.
 //!
-//! On startup, the JS shim calls `check_update`. The command queries
-//! `https://api.github.com/repos/<owner>/<repo>/releases/latest` and compares
-//! the published tag with the current app version.
+//! On startup, the JS shim calls `check_update`. The command asks the
+//! updater (which reads `latest.json` from the `plugins.updater.endpoints`
+//! configured in tauri.conf.json) whether a newer signed release exists.
+//!
+//! When the user confirms, `apply_update` downloads the update with progress
+//! events (`tbx-update-progress`), verifies its signature, launches the NSIS
+//! installer and exits: the installer finishes the job and restarts the app.
 //!
 //! Versioning scheme (set by the workflow):
-//!   - app version    : `YYYY.M.D`   (semver, e.g. 2026.10.10)
-//!   - release tag    : `YYYYMMDD`   (e.g. 20261010)
-//! Both shapes are normalized to a (Y, M, D) triplet before comparing.
+//!   - app version : `YYYY.M.D` (semver, e.g. 2026.10.10)
+//!   - release tag : `YYYYMMDD` (e.g. 20261010)
+//! The semver comparison is done by the updater plugin itself.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter};
+use tauri_plugin_updater::UpdaterExt;
 
-const API_BASE: &str = "https://api.github.com";
-const FALLBACK_REPO: &str = "RackRunner1/ToolsBoXApp";
-const TIMEOUT_SECS: u64 = 12;
+/// Fallback link (latest release page) shown when the updater has no
+/// direct download URL to offer (manual install path).
+const FALLBACK_RELEASES_PAGE: &str = "https://github.com/RackRunner1/ToolsBoXApp/releases/latest";
 
 /// Result sent to the frontend to render the update banner.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateInfo {
-    /// `true` only when the published release is strictly newer.
+    /// `true` only when a newer signed release is available.
     pub available: bool,
     pub current_version: String,
     pub latest_version: String,
-    /// Page of the latest release.
+    /// Page of the latest release (manual fallback).
     pub release_url: String,
-    /// Direct link to the x64 NSIS installer, when published.
+    /// Direct link to the update package, when announced.
     pub download_url: Option<String>,
     pub published_at: Option<String>,
-    /// Set when the check failed (offline, rate limit, ...).
+    /// Set when the check failed (offline, updater not configured, ...).
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct GitHubAsset {
-    name: String,
-    browser_download_url: String,
+/// Download progress sent to the frontend (`tbx-update-progress` event).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateProgress {
+    downloaded: usize,
+    total: Option<u64>,
 }
 
-#[derive(Debug, Deserialize)]
-struct GitHubRelease {
-    tag_name: String,
-    html_url: String,
-    #[serde(default)]
-    published_at: Option<String>,
-    #[serde(default)]
-    assets: Vec<GitHubAsset>,
+fn no_update(current: String, error: Option<String>) -> UpdateInfo {
+    UpdateInfo {
+        available: false,
+        current_version: current,
+        latest_version: String::new(),
+        release_url: FALLBACK_RELEASES_PAGE.to_string(),
+        download_url: None,
+        published_at: None,
+        error,
+    }
 }
 
-/// Derives `owner/repo` from `bundle.homepage` (tauri.conf.json).
-fn repo_path(app: &tauri::AppHandle) -> String {
-    let homepage = app
-        .config()
-        .bundle
-        .homepage
-        .clone()
-        .unwrap_or_default();
-
-    let trimmed = homepage.trim().trim_end_matches('/');
-    let path = trimmed
-        .rsplit("//")
-        .next()
-        .unwrap_or(trimmed)
-        .trim_start_matches("www.");
-
-    if path.contains('/') && !path.contains(char::is_whitespace) {
-        path.to_string()
+fn current_version(app: &AppHandle) -> String {
+    let from_context = app.package_info().version.to_string();
+    if from_context == "0.0.0" || from_context.is_empty() {
+        env!("TBX_VERSION").to_string()
     }
     else {
-        FALLBACK_REPO.to_string()
+        from_context
     }
 }
 
-/// Normalizes a version into a comparable triplet of numbers.
-///
-/// - `20261010`      -> `[2026, 10, 10]` (YYYYMMDD)
-/// - `v2026.10.10`   -> `[2026, 10, 10]`
-/// - `2026.1.1`      -> `[2026, 1, 1]`
-/// - anything else   -> the numbers found, in order
-fn version_tuple(version: &str) -> Vec<u64> {
-    let s = version.trim().trim_start_matches(['v', 'V']);
-
-    if s.len() == 8 && s.bytes().all(|b| b.is_ascii_digit()) {
-        let compact: u64 = s.parse().unwrap_or(0);
-        return vec![compact / 10_000, (compact / 100) % 100, compact % 100];
-    }
-
-    s.split(|c: char| c == '.' || c == '-' || c == '_' || c == '+' || c.is_whitespace())
-        .filter(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
-        .filter_map(|part| part.parse::<u64>().ok())
-        .collect()
-}
-
-/// `true` when `candidate` is strictly newer than `current`.
-fn is_newer(candidate: &str, current: &str) -> bool {
-    let candidate = version_tuple(candidate);
-    let current = version_tuple(current);
-
-    for index in 0..candidate.len().max(current.len()) {
-        let left = candidate.get(index).copied().unwrap_or(0);
-        let right = current.get(index).copied().unwrap_or(0);
-        match left.cmp(&right) {
-            std::cmp::Ordering::Greater => return true,
-            std::cmp::Ordering::Less => return false,
-            std::cmp::Ordering::Equal => {}
-        }
-    }
-    false
-}
-
-/// Queries GitHub Releases and compares with the current version.
+/// Checks the update endpoint for a newer signed release.
 #[tauri::command]
-pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
-    let fallback = env!("TBX_VERSION").to_string();
-    let current = {
-        let from_context = app.package_info().version.to_string();
-        if from_context == "0.0.0" || from_context.is_empty() {
-            fallback
-        }
-        else {
-            from_context
-        }
+pub async fn check_update(app: AppHandle) -> Result<UpdateInfo, String> {
+    let current = current_version(&app);
+
+    let updater = match app.updater() {
+        Ok(updater) => updater,
+        Err(error) => return Ok(no_update(current, Some(format!("updater unavailable: {error}")))),
     };
 
-    let repo = repo_path(&app);
-    // Fallback link ("latest" page) used when the API is unreachable.
-    // On success, the exact release URL (html_url) is used instead.
-    let fallback_url = format!("https://github.com/{repo}/releases/latest");
-    let api_url = format!("{API_BASE}/repos/{repo}/releases/latest");
-
-    let client = reqwest::Client::builder()
-        .user_agent(format!("ToolsBoXApp/{current} (+{fallback_url})"))
-        .timeout(std::time::Duration::from_secs(TIMEOUT_SECS))
-        .build()
-        .map_err(|error| format!("HTTP client: {error}"))?;
-
-    // A network failure must never bother the user: return a
-    // "no update" result together with the error message.
-    let response = match client.get(&api_url).send().await {
-        Ok(response) => response,
-        Err(error) => {
-            return Ok(UpdateInfo {
-                available: false,
-                current_version: current,
-                latest_version: String::new(),
-                release_url: fallback_url,
-                download_url: None,
-                published_at: None,
-                error: Some(format!("{error}")),
-            });
-        }
-    };
-
-    if !response.status().is_success() {
-        return Ok(UpdateInfo {
-            available: false,
-            current_version: current,
-            latest_version: String::new(),
-            release_url: fallback_url,
-            download_url: None,
-            published_at: None,
-            error: Some(format!("HTTP {}", response.status().as_u16())),
-        });
+    // A failed check must never bother the user: report "no update"
+    // together with the error message (logged by the frontend).
+    match updater.check().await {
+        Err(error) => Ok(no_update(current, Some(error.to_string()))),
+        Ok(None) => Ok(no_update(current, None)),
+        Ok(Some(update)) => Ok(UpdateInfo {
+            available: true,
+            current_version: update.current_version,
+            latest_version: update.version,
+            release_url: FALLBACK_RELEASES_PAGE.to_string(),
+            download_url: Some(update.download_url.to_string()),
+            published_at: update.date.map(|date| date.to_string()),
+            error: None,
+        }),
     }
-
-    let release: GitHubRelease = match response.json().await {
-        Ok(release) => release,
-        Err(error) => {
-            return Ok(UpdateInfo {
-                available: false,
-                current_version: current,
-                latest_version: String::new(),
-                release_url: fallback_url,
-                download_url: None,
-                published_at: None,
-                error: Some(format!("unreadable response: {error}")),
-            });
-        }
-    };
-
-    let latest_version = release
-        .tag_name
-        .trim()
-        .trim_start_matches(['v', 'V'])
-        .to_string();
-
-    let available = is_newer(&latest_version, &current);
-
-    // The x64 NSIS installer is the preferred asset.
-    let download_url = release
-        .assets
-        .iter()
-        .find(|asset| asset.name.ends_with(".exe") && asset.name.contains("x64"))
-        .or_else(|| release.assets.iter().find(|asset| asset.name.ends_with(".exe")))
-        .map(|asset| asset.browser_download_url.clone());
-
-    Ok(UpdateInfo {
-        available,
-        current_version: current,
-        latest_version,
-        release_url: release.html_url,
-        download_url,
-        published_at: release.published_at,
-        error: None,
-    })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Downloads, verifies and installs the pending update.
+///
+/// Progress is emitted as `tbx-update-progress` events
+/// (`{ downloaded, total }`). On Windows the app exits once the installer
+/// is launched, so the `Ok` value is rarely delivered to the frontend:
+/// reaching 100% then losing the WebView means "it worked".
+#[tauri::command]
+pub async fn apply_update(app: AppHandle) -> Result<(), String> {
+    let updater = app
+        .updater()
+        .map_err(|error| format!("updater unavailable: {error}"))?;
 
-    #[test]
-    fn compares_date_tags_and_semver_versions() {
-        assert!(is_newer("20261011", "2026.10.10"));
-        assert!(is_newer("v2026.11.1", "2026.10.10"));
-        assert!(!is_newer("20261010", "2026.10.10"));
-        assert!(!is_newer("20260930", "2026.9.30"));
-        assert!(is_newer("2026.10.9", "2026.9.30"));
-        assert!(!is_newer("1.0.0", "1.0.0"));
-    }
+    let Some(update) = updater.check().await.map_err(|error| error.to_string())?
+    else {
+        return Err("no update available".to_string());
+    };
 
-    #[test]
-    fn parses_both_version_shapes() {
-        assert_eq!(version_tuple("20261010"), vec![2026, 10, 10]);
-        assert_eq!(version_tuple("v2026.10.10"), vec![2026, 10, 10]);
-        assert_eq!(version_tuple("2026.1.1"), vec![2026, 1, 1]);
-    }
+    update
+        .download_and_install(
+            {
+                let app = app.clone();
+                move |downloaded, total| {
+                    let _ = app.emit(
+                        "tbx-update-progress",
+                        UpdateProgress { downloaded, total },
+                    );
+                }
+            },
+            || {},
+        )
+        .await
+        .map_err(|error| error.to_string())
 }

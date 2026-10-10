@@ -16,8 +16,10 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             update::check_update,
+            update::apply_update,
             download::save_download,
             download::reveal_file,
             download::open_external
