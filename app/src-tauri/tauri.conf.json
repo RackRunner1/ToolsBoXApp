@@ -39,7 +39,7 @@
     "publisher": "RackRunner",
     "copyright": "Copyright © RackRunner",
     "homepage": "https://github.com/RackRunner1/ToolsBoXApp",
-    "licenseFile": "../LICENSE",
+    "licenseFile": "../../LICENSE",
     "shortDescription": "Boite a outils de bureau (contenu ToolsBoXMachine)",
     "longDescription": "ToolsBoXApp embarque le contenu de ToolsBoXMachine dans une fenêtre WebView2 et signale les nouvelles versions publiées sur GitHub.",
     "icon": [

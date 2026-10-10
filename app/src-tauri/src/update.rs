@@ -124,11 +124,13 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
     };
 
     let repo = repo_path(&app);
-    let release_url = format!("https://github.com/{repo}/releases/latest");
+    // Lien de repli (page "latest") utilisé quand l'API est injoignable.
+    // En cas de succès, on utilisera l'URL exacte de la release (html_url).
+    let fallback_url = format!("https://github.com/{repo}/releases/latest");
     let api_url = format!("{API_BASE}/repos/{repo}/releases/latest");
 
     let client = reqwest::Client::builder()
-        .user_agent(format!("ToolsBoXApp/{current} (+{release_url})"))
+        .user_agent(format!("ToolsBoXApp/{current} (+{fallback_url})"))
         .timeout(std::time::Duration::from_secs(TIMEOUT_SECS))
         .build()
         .map_err(|error| format!("client HTTP : {error}"))?;
@@ -142,7 +144,7 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
                 available: false,
                 current_version: current,
                 latest_version: String::new(),
-                release_url,
+                release_url: fallback_url,
                 download_url: None,
                 published_at: None,
                 error: Some(format!("{error}")),
@@ -155,7 +157,7 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
             available: false,
             current_version: current,
             latest_version: String::new(),
-            release_url,
+            release_url: fallback_url,
             download_url: None,
             published_at: None,
             error: Some(format!("HTTP {}", response.status().as_u16())),
@@ -169,7 +171,7 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
                 available: false,
                 current_version: current,
                 latest_version: String::new(),
-                release_url,
+                release_url: fallback_url,
                 download_url: None,
                 published_at: None,
                 error: Some(format!("réponse illisible : {error}")),
@@ -197,7 +199,7 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<UpdateInfo, String> {
         available,
         current_version: current,
         latest_version,
-        release_url,
+        release_url: release.html_url,
         download_url,
         published_at: release.published_at,
         error: None,
