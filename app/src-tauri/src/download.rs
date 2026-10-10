@@ -55,7 +55,7 @@ fn file_extension(name: &str) -> Option<String> {
 #[tauri::command]
 pub async fn save_download(
     app: AppHandle,
-    request: tauri::ipc::Request,
+    request: tauri::ipc::Request<'_>,
 ) -> Result<Option<String>, String> {
     let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
         return Err("contenu brut attendu pour save_download".to_string());
