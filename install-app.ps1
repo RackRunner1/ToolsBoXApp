@@ -22,8 +22,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()) `
-             .IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 # ------------------------------------------------------------------
 # Sans les droits admin, on relance tout le processus en élévation.

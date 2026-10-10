@@ -99,7 +99,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A contents
           if ($LASTEXITCODE -ne 0) { throw "git add a échoué" }
-          if (git diff --cached --quiet; $LASTEXITCODE -eq 0) {
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
             Write-Host "Aucun changement dans contents/ (source inchangée)."
           } else {
             git commit -m "chore(contents): synchro ToolsBoXMachine ${{ steps.vars.outputs.tag }}" | Out-Null
@@ -273,25 +274,26 @@ jobs:
           $base    = "https://github.com/${{ github.repository }}/releases/latest/download"
           $version = "${{ steps.vars.outputs.version }}"
 
-          $xml = @"
-<?xml version="1.0" encoding="utf-8"?>
-<AppInstaller xmlns="http://schemas.microsoft.com/appx/appinstaller/2017/2"
-              xmlns:s4="http://schemas.microsoft.com/appx/appinstaller/2021"
-              Uri="$base/ToolsBoXApp.appinstaller"
-              Version="$version">
-  <!-- Vérification des mises à jour à chaque lancement, sans bloquer l'app -->
-  <UpdateSettings OnLaunch="true"
-                  HoursBetweenUpdateChecks="0"
-                  ShowPrompt="true"
-                  UpdateBlocksActivation="false"
-                  s4:ForceUpdateFromAnyVersion="false" />
-  <MainPackage Name="$env:PKG_NAME"
-               Publisher="$env:PKG_PUBLISHER"
-               Version="$version"
-               ProcessorArchitecture="x64"
-               Uri="$base/ToolsBoXApp_x64.msix" />
-</AppInstaller>
-"@
+          $xmlLines = @(
+            '<?xml version="1.0" encoding="utf-8"?>'
+            '<AppInstaller xmlns="http://schemas.microsoft.com/appx/appinstaller/2017/2"'
+            '              xmlns:s4="http://schemas.microsoft.com/appx/appinstaller/2021"'
+            ('              Uri="' + $base + '/ToolsBoXApp.appinstaller"')
+            ('              Version="' + $version + '">')
+            '  <!-- Vérification des mises à jour à chaque lancement, sans bloquer l''app -->'
+            '  <UpdateSettings OnLaunch="true"'
+            '                  HoursBetweenUpdateChecks="0"'
+            '                  ShowPrompt="true"'
+            '                  UpdateBlocksActivation="false"'
+            '                  s4:ForceUpdateFromAnyVersion="false" />'
+            ('  <MainPackage Name="' + $env:PKG_NAME + '"')
+            ('               Publisher="' + $env:PKG_PUBLISHER + '"')
+            ('               Version="' + $version + '"')
+            '               ProcessorArchitecture="x64"'
+            ('               Uri="' + $base + '/ToolsBoXApp_x64.msix" />')
+            '</AppInstaller>'
+          )
+          $xml = ($xmlLines -join "`r`n") + "`r`n"
           New-Item -ItemType Directory -Path artifacts -Force | Out-Null
           [IO.File]::WriteAllText("$pwd\artifacts\ToolsBoXApp.appinstaller", $xml)
 
@@ -324,45 +326,48 @@ jobs:
             } catch {}
           }
 
+          $bb = '``'
+
           if ("$env:PFX_MODE" -eq 'ephemeral') {
-            $certNote = @"
-> ⚠️ **Build signé avec un certificat auto-signé éphémère.**
-> Installez d'abord ``ToolsBoXApp.cer`` (double-clic → Ordinateur local → *Trusted People*),
-> puis le ``.appinstaller``. Les mises à jour automatiques deviennent fiables dès que les
-> secrets ``CERT_BASE64`` / ``CERT_PASSWORD`` sont configurés (voir le README du dépôt).
-"@
+            $certNote = @(
+              '> ⚠️ **Build signé avec un certificat auto-signé éphémère.**'
+              ("> Installez d'abord " + $bb + 'ToolsBoXApp.cer' + $bb + ' (double-clic → Ordinateur local → *Trusted People*),')
+              ('> puis le ' + $bb + '.appinstaller' + $bb + '. Les mises à jour automatiques deviennent fiables dès que les')
+              ('> secrets ' + $bb + 'CERT_BASE64' + $bb + ' / ' + $bb + 'CERT_PASSWORD' + $bb + ' sont configurés (voir le README du dépôt).')
+            ) -join "`n"
           } else {
-            $certNote = "🔏 Signature : certificat ``ToolsBoXApp.cer`` (à installer une fois dans *Trusted People*)."
+            $certNote = '🔏 Signature : certificat ' + $bb + 'ToolsBoXApp.cer' + $bb + ' (à installer une fois dans *Trusted People*).'
           }
 
-          $body = @"
-## 🪟 Build $tag
-
-| | |
-|---|---|
-| **Version du paquet** | ``$ver`` |
-| **Contenu** | $src |
-| **Fichier d'installation** | [``ToolsBoXApp.appinstaller``]($base/ToolsBoXApp.appinstaller) |
-
-### Installation
-- **Automatique (recommandé)** — PowerShell :
-  ```powershell
-  irm $base/install-app.ps1 | iex
-  ```
-- **Manuelle** — installez ``ToolsBoXApp.cer`` (double-clic → *Ordinateur local* → **Trusted People**),
-  puis téléchargez et double-cliquez ``ToolsBoXApp.appinstaller``.
-
-### Mises à jour
-Une fois installée, l'app se met à jour automatiquement au lancement lorsque ce
-build est le plus récent.
-
-$certNote
-
-### Sommes de contrôle (SHA256)
-```
-$(Get-Content "$pwd\artifacts\checksums.txt" -Raw)
-```
-"@
+          $bodyLines = @(
+            "## 🪟 Build $tag"
+            ''
+            '| | |'
+            '|---|---|'
+            ('| **Version du paquet** | ' + $bb + $ver + $bb + ' |')
+            ('| **Contenu** | ' + $src + ' |')
+            ("| **Fichier d'installation** | [" + $bb + 'ToolsBoXApp.appinstaller' + $bb + '](' + $base + '/ToolsBoXApp.appinstaller) |')
+            ''
+            '### Installation'
+            '- **Automatique (recommandé)** — PowerShell :'
+            '  ```powershell'
+            ('  irm ' + $base + '/install-app.ps1 | iex')
+            '  ```'
+            ('- **Manuelle** — installez ' + $bb + 'ToolsBoXApp.cer' + $bb + ' (double-clic → *Ordinateur local* → **Trusted People**),')
+            ('  puis téléchargez et double-cliquez ' + $bb + 'ToolsBoXApp.appinstaller' + $bb + '.')
+            ''
+            '### Mises à jour'
+            "Une fois installée, l'app se met à jour automatiquement au lancement lorsque ce"
+            'build est le plus récent.'
+            ''
+            $certNote
+            ''
+            '### Sommes de contrôle (SHA256)'
+            '```'
+            (Get-Content "$pwd\artifacts\checksums.txt" -Raw)
+            '```'
+          )
+          $body = $bodyLines -join "`n"
           "body<<RELEASE_NOTES_EOF" >> $env:GITHUB_OUTPUT
           $body >> $env:GITHUB_OUTPUT
           "RELEASE_NOTES_EOF" >> $env:GITHUB_OUTPUT
