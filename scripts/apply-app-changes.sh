@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Applies the forced app-only changes to the staged web copy.
+# Applies the forced app-only changes to the staged web copy:
+#   1. Hide the "App" button in the navbar.
+#   2. Remove the footer links (About, Philosophy, Privacy Policy,
+#      Terms of Service), keeping only the copyright line.
 #
 # Runs against the staged web copy (app/web/), never against contents/
 # (which stays a pristine mirror of ToolsBoXMachine). Called automatically
@@ -58,6 +61,43 @@ else:
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(new)
     print("navbar: App link removed.")
+PYEOF
+
+# ---------------------------------------------------------------------------
+# 2. Remove the footer links, keeping only the copyright line: with a single
+#    child left, center the footer content so the line does not stick to the
+#    left edge on desktop.
+# ---------------------------------------------------------------------------
+WEB_DIR="$WEB_DIR" python3 - <<'PYEOF'
+import os
+import re
+
+path = os.path.join(os.environ["WEB_DIR"], "ui", "footer.html")
+if not os.path.isfile(path):
+    print("(skipped) ui/footer.html not found in the web copy.")
+    raise SystemExit(0)
+
+with open(path, encoding="utf-8") as f:
+    raw = f.read()
+
+new = re.sub(
+    r'[ \t]*<div\b[^>]*class="footer-links"[^>]*>.*?</div\s*>',
+    "",
+    raw,
+    flags=re.IGNORECASE | re.DOTALL,
+)
+new = re.sub(r"\n[ \t]*\n([ \t]*</div>)", r"\n\1", new)
+new = new.replace(
+    '<div class="footer-content">',
+    '<div class="footer-content" style="justify-content: center; text-align: center;">',
+)
+
+if new == raw:
+    print("footer: no footer links found, nothing to do.")
+else:
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(new)
+    print("footer: footer links removed, copyright centered.")
 PYEOF
 
 echo "OK: app changes applied"
