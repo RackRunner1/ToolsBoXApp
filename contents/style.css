@@ -85,6 +85,7 @@ h1 {
 .nav-links {
   display: flex;
   gap: 1.5rem;
+  align-items: center;
 }
 
 .nav-link {
@@ -834,7 +835,7 @@ input[type="range"] {
 }
 
 /* ===========================
-   RESPONSIVE — Tablet
+   RESPONSIVE: Tablet
    =========================== */
 @media (max-width: 1024px) {
   .navbar {
@@ -880,7 +881,7 @@ input[type="range"] {
 }
 
 /* ===========================
-   RESPONSIVE — Phone (large)
+   RESPONSIVE: Phone (large)
    =========================== */
 @media (max-width: 768px) {
   .blur-tool-layout {
@@ -1060,7 +1061,7 @@ input[type="range"] {
 }
 
 /* ===========================
-   RESPONSIVE — Phone (small)
+   RESPONSIVE: Phone (small)
    =========================== */
 @media (max-width: 480px) {
   .navbar {
