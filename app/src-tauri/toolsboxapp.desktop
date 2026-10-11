@@ -6,6 +6,7 @@ Comment={{comment}}
 Exec={{exec}}
 StartupWMClass={{exec}}
 Icon={{icon}}
+Keywords=ToolsBoXMachine;tbxm;tbxa;ToolsBoXApp;notes;emoji;clock;tools;
 Name=ToolsBoXApp
 Terminal=false
 Type=Application
