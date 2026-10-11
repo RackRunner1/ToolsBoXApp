@@ -416,6 +416,9 @@ fn parse_latest_release_for(doc: &str, extension: &str) -> Result<(String, Strin
 
 /// `(tag_name, rpm_download_url)` from a GitHub "latest release" response.
 /// Prefers an asset with `x86_64`/`amd64` in its name.
+///
+/// Shorthand for `parse_latest_release_for(doc, ".rpm")`; kept for tests.
+#[cfg(test)]
 fn parse_latest_release(doc: &str) -> Result<(String, String), String> {
     parse_latest_release_for(doc, ".rpm")
 }
