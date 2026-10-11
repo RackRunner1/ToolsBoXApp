@@ -43,3 +43,4 @@ The script detects your distribution and installs the right package for you.
 
 - Update: `tbxa update`
 - Uninstall: `tbxa uninstall`
+
