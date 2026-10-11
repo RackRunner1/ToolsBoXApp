@@ -4,6 +4,8 @@
 # Fetches the source repository content (shallow clone, or a local clone
 # through --source-path) then mirrors the known folders/files into contents/
 # (files deleted upstream are removed locally).
+# Web-only extras (SEO/crawler files, OG images, repo meta files) are purged
+# after the sync so they never ship in the desktop app.
 # Writes contents/.sync-info.json (source SHA + timestamp, only rewritten
 # when the source changed, to avoid a daily commit with no changes).
 #
@@ -31,9 +33,13 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [ -z "$DEST" ] && DEST="$REPO_ROOT/contents"
 
 # Folders synced as mirrors
-SYNC_DIRS=".assets og pages public tools ui"
+SYNC_DIRS=".assets pages public tools ui"
 # Files synced at the root
-SYNC_FILES="index.html style.css llms.txt robots.txt sitemap.xml"
+SYNC_FILES="index.html style.css"
+# Never shipped in contents/ (web-only or repo-meta extras): purged after
+# the sync, including leftovers from previous syncs.
+EXCLUDE_DIRS="og .github scripts"
+EXCLUDE_FILES="sitemap.xml robots.txt llms.txt README.md LICENSE CONTRIBUTING.md .gitignore"
 
 mkdir -p "$DEST"
 
@@ -91,7 +97,23 @@ for f in $SYNC_FILES; do
 done
 
 # ---------------------------------------------------------------------------
-# 5. Sync metadata (idempotent)
+# 5. Purge web-only extras (SEO/crawler files, OG images, repo meta)
+# ---------------------------------------------------------------------------
+for d in $EXCLUDE_DIRS; do
+  if [ -e "$DEST/$d" ]; then
+    rm -rf "$DEST/$d"
+    echo "  (excluded) $d"
+  fi
+done
+for f in $EXCLUDE_FILES; do
+  if [ -e "$DEST/$f" ]; then
+    rm -f "$DEST/$f"
+    echo "  (excluded) $f"
+  fi
+done
+
+# ---------------------------------------------------------------------------
+# 6. Sync metadata (idempotent)
 # ---------------------------------------------------------------------------
 INFO_PATH="$DEST/.sync-info.json"
 UNCHANGED=0
