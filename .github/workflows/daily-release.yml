@@ -1,13 +1,14 @@
 name: Daily Build & Release
 
-# Daily build of ToolsBoXApp (x64 RPM package) from the content synced
+# Daily build of ToolsBoXApp (x64 DEB + RPM packages) from the content synced
 # from ToolsBoXMachine, then publication as a GitHub release.
 #
 # - every day at midnight (UTC)
 # - or on demand from the repository Actions tab
 #
-# Linux only. The RPM also installs the `tbxa` terminal companion
-# (`tbxa update` / `tbxa uninstall`).
+# Linux only. Both packages also install the `tbxa` terminal companion
+# (`tbxa update` / `tbxa uninstall`): .deb for Debian/Ubuntu, .rpm for
+# Fedora/RHEL.
 #
 # The `check` job compares the source commit embedded in the latest release
 # with the current upstream HEAD: when ToolsBoXMachine has not moved, the
@@ -141,7 +142,7 @@ jobs:
           fi
 
   # -----------------------------------------------------------------------
-  # Full pipeline: sync, build the RPM, publish the release.
+  # Full pipeline: sync, build the DEB + RPM, publish the release.
   # Runs only when the check job detected upstream changes.
   # -----------------------------------------------------------------------
   build:
@@ -243,33 +244,47 @@ jobs:
           ./cli/target/release/tbxa --help
 
       # ---------------------------------------------------------------------
-      # 5. Build the x64 RPM package
+      # 5. Build the x64 DEB + RPM packages
       # ---------------------------------------------------------------------
-      - name: Build (release) + RPM bundler
+      - name: Build (release) + DEB/RPM bundlers
         working-directory: app
         run: npm run build
 
-      - name: Collect and verify the RPM
-        id: rpm
+      - name: Collect and verify the packages
+        id: pkgs
         run: |
           mkdir -p artifacts
           RPM="$(ls -t app/src-tauri/target/release/bundle/rpm/*.rpm 2>/dev/null | head -n 1)"
           [ -n "$RPM" ] || { echo "No RPM produced under app/src-tauri/target/release/bundle/rpm" >&2; exit 1; }
           echo "Picked RPM: $RPM"
           cp "$RPM" artifacts/
-          ASSET="$(basename "$RPM")"
-          echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
+          echo "rpm_asset=$(basename "$RPM")" >> "$GITHUB_OUTPUT"
 
-          echo "--- package info ---"
-          rpm -qip "artifacts/$ASSET"
-          echo "--- package contents ---"
-          rpm -qlp "artifacts/$ASSET" | tee /tmp/rpm-list.txt
+          DEB="$(ls -t app/src-tauri/target/release/bundle/deb/*.deb 2>/dev/null | head -n 1)"
+          [ -n "$DEB" ] || { echo "No DEB produced under app/src-tauri/target/release/bundle/deb" >&2; exit 1; }
+          echo "Picked DEB: $DEB"
+          cp "$DEB" artifacts/
+          echo "deb_asset=$(basename "$DEB")" >> "$GITHUB_OUTPUT"
+
+          echo "--- rpm info ---"
+          rpm -qip "artifacts/$(basename "$RPM")"
+          echo "--- rpm contents ---"
+          rpm -qlp "artifacts/$(basename "$RPM")" | tee /tmp/rpm-list.txt
           grep -q "/usr/bin/tbxa" /tmp/rpm-list.txt || { echo "tbxa missing from the RPM!" >&2; exit 1; }
           grep -q "/usr/bin/toolsboxapp" /tmp/rpm-list.txt || { echo "app binary missing from the RPM!" >&2; exit 1; }
           grep -q "\.desktop$" /tmp/rpm-list.txt || { echo "desktop file missing from the RPM!" >&2; exit 1; }
           echo "RPM verified: app binary, tbxa and desktop file present."
 
-          (cd artifacts && sha256sum "$ASSET" > checksums.txt)
+          echo "--- deb info ---"
+          dpkg-deb --info "artifacts/$(basename "$DEB")"
+          echo "--- deb contents ---"
+          dpkg-deb --contents "artifacts/$(basename "$DEB")" | tee /tmp/deb-list.txt
+          grep -q "usr/bin/tbxa" /tmp/deb-list.txt || { echo "tbxa missing from the DEB!" >&2; exit 1; }
+          grep -q "usr/bin/toolsboxapp" /tmp/deb-list.txt || { echo "app binary missing from the DEB!" >&2; exit 1; }
+          grep -q "\.desktop$" /tmp/deb-list.txt || { echo "desktop file missing from the DEB!" >&2; exit 1; }
+          echo "DEB verified: app binary, tbxa and desktop file present."
+
+          (cd artifacts && sha256sum *.rpm *.deb > checksums.txt)
           cat artifacts/checksums.txt
 
       # ---------------------------------------------------------------------
@@ -280,13 +295,15 @@ jobs:
         id: notes
         run: |
           TAG="${{ needs.check.outputs.tag }}"
-          ASSET="${{ steps.rpm.outputs.asset }}"
+          RPM_ASSET="${{ steps.pkgs.outputs.rpm_asset }}"
+          DEB_ASSET="${{ steps.pkgs.outputs.deb_asset }}"
           cat >> "$GITHUB_OUTPUT" <<EOF
           body<<RELEASE_NOTES_EOF
           ## ToolsBoXApp $TAG
 
           ### Installation
-          - New install (Fedora/RHEL): download \`$ASSET\` below, then \`sudo dnf install ./$ASSET\`.
+          - Debian/Ubuntu: download \`$DEB_ASSET\` below, then \`sudo apt install ./$DEB_ASSET\`.
+          - Fedora/RHEL: download \`$RPM_ASSET\` below, then \`sudo dnf install ./$RPM_ASSET\`.
           - Update: run \`tbxa update\` (fetches the latest release and reinstalls when newer).
           - Uninstall: run \`tbxa uninstall\`.
           RELEASE_NOTES_EOF
@@ -306,4 +323,5 @@ jobs:
           fail_on_unmatched_files: false
           files: |
             artifacts/*.rpm
+            artifacts/*.deb
             artifacts/checksums.txt

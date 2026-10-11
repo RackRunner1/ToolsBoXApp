@@ -8,7 +8,7 @@
     "web": "bash ../scripts/prepare-web.sh",
     "icons": "bash ../scripts/generate-icons.sh",
     "dev": "tauri dev",
-    "build": "tauri build --bundles rpm",
+    "build": "tauri build --bundles deb rpm",
     "rebuild": "npm run web && npm run icons && npm run build",
     "test:shim": "node src-tauri/src/shim.test.js"
   },

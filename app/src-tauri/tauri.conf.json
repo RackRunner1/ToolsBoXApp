@@ -34,7 +34,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["rpm"],
+    "targets": ["deb", "rpm"],
     "category": "Utility",
     "publisher": "RackRunner",
     "copyright": "Copyright (c) RackRunner",
@@ -49,6 +49,12 @@
       "icons/icon.png"
     ],
     "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libsoup-3.0-0", "libgtk-3-0", "curl"],
+        "files": {
+          "/usr/bin/tbxa": "../../cli/target/release/tbxa"
+        }
+      },
       "rpm": {
         "release": "1",
         "epoch": 0,
