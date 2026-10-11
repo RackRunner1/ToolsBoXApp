@@ -40,6 +40,9 @@ SYNC_FILES="index.html style.css"
 # the sync, including leftovers from previous syncs.
 EXCLUDE_DIRS="og .github scripts"
 EXCLUDE_FILES="sitemap.xml robots.txt llms.txt README.md LICENSE CONTRIBUTING.md .gitignore"
+# Nested paths purged after the sync (e.g. the app install page, pointless
+# inside the installed app).
+EXCLUDE_PATHS="pages/app.html"
 
 mkdir -p "$DEST"
 
@@ -60,7 +63,7 @@ else
   SRC="$TMP"
 fi
 
-cleanup() { [ -n "$TMP" ] && rm -rf "$TMP"; }
+cleanup() { [ -n "$TMP" ] && rm -rf "$TMP"; return 0; }
 trap cleanup EXIT
 
 # ---------------------------------------------------------------------------
@@ -109,6 +112,12 @@ for f in $EXCLUDE_FILES; do
   if [ -e "$DEST/$f" ]; then
     rm -f "$DEST/$f"
     echo "  (excluded) $f"
+  fi
+done
+for p in $EXCLUDE_PATHS; do
+  if [ -e "$DEST/$p" ]; then
+    rm -rf "$DEST/$p"
+    echo "  (excluded) $p"
   fi
 done
 

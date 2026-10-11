@@ -4,6 +4,8 @@
 # Copies contents/ to app/web/ (the frontendDist configured in
 # app/src-tauri/tauri.conf.json). Every file found there is embedded into
 # the binary at build time: the produced binary is standalone.
+# At the end, scripts/apply-app-changes.sh enforces the forced app-only
+# changes (e.g. hiding the "App" button).
 #
 # Run after scripts/sync-contents.sh and before `tauri build`.
 #
@@ -45,3 +47,8 @@ done
 FILE_COUNT="$(find "$WEB_DIR" -type f | wc -l | tr -d ' ')"
 SIZE_MB="$(du -sm "$WEB_DIR" | cut -f1)"
 echo "OK: app/web/ ready ($FILE_COUNT files, ${SIZE_MB} MB) - embedded into the binary at build time"
+
+# ---------------------------------------------------------------------------
+# Forced app-only changes
+# ---------------------------------------------------------------------------
+bash "$REPO_ROOT/scripts/apply-app-changes.sh" --web-dir "$WEB_DIR"
