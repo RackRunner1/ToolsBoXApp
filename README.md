@@ -1,5 +1,9 @@
 # ToolsBoXApp
 
+<img width="1519" height="880" alt="image" src="https://github.com/user-attachments/assets/8fb705e8-1c4e-4027-970c-7914f792c942" />
+
+---
+
 ToolsBoXApp brings **ToolsBoXMachine** to your desktop as a real app.
 It runs **locally on your computer**, so once it is installed you can use
 all your tools **without an internet connection**.
