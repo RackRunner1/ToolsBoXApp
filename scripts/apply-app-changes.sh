@@ -64,9 +64,8 @@ else:
 PYEOF
 
 # ---------------------------------------------------------------------------
-# 2. Remove the footer links, keeping only the copyright line: with a single
-#    child left, center the footer content so the line does not stick to the
-#    left edge on desktop.
+# 2. Remove the footer links, keeping only the copyright line (left-aligned,
+#    like the default desktop footer layout).
 # ---------------------------------------------------------------------------
 WEB_DIR="$WEB_DIR" python3 - <<'PYEOF'
 import os
@@ -87,17 +86,13 @@ new = re.sub(
     flags=re.IGNORECASE | re.DOTALL,
 )
 new = re.sub(r"\n[ \t]*\n([ \t]*</div>)", r"\n\1", new)
-new = new.replace(
-    '<div class="footer-content">',
-    '<div class="footer-content" style="justify-content: center; text-align: center;">',
-)
 
 if new == raw:
     print("footer: no footer links found, nothing to do.")
 else:
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(new)
-    print("footer: footer links removed, copyright centered.")
+    print("footer: footer links removed, copyright kept.")
 PYEOF
 
 echo "OK: app changes applied"
