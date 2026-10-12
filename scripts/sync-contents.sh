@@ -40,9 +40,10 @@ SYNC_FILES="index.html style.css"
 # the sync, including leftovers from previous syncs.
 EXCLUDE_DIRS="og .github scripts"
 EXCLUDE_FILES="sitemap.xml robots.txt llms.txt README.md LICENSE CONTRIBUTING.md .gitignore"
-# Nested paths purged after the sync (e.g. the app install page, pointless
-# inside the installed app).
-EXCLUDE_PATHS="pages/app.html"
+# Nested paths purged after the sync (supports globs). The info pages are
+# pointless inside the installed app (install page, about, philosophy,
+# privacy, terms), so the whole pages/ content is excluded.
+EXCLUDE_PATHS="pages/*.html"
 
 mkdir -p "$DEST"
 
@@ -115,10 +116,11 @@ for f in $EXCLUDE_FILES; do
   fi
 done
 for p in $EXCLUDE_PATHS; do
-  if [ -e "$DEST/$p" ]; then
-    rm -rf "$DEST/$p"
-    echo "  (excluded) $p"
-  fi
+  for f in "$DEST"/$p; do
+    [ -e "$f" ] || continue
+    rm -rf "$f"
+    echo "  (excluded) ${f#"$DEST"/}"
+  done
 done
 
 # ---------------------------------------------------------------------------
