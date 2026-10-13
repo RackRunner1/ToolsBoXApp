@@ -20,7 +20,7 @@ up to date.
 
 ## Installation
 
-### Option 1 — Automatic (recommended)
+### Option 1: Automatic (recommended)
 
 Open a terminal and run:
 
@@ -30,7 +30,7 @@ curl -fsSL https://tbxm.org/install.sh | bash
 
 The script detects your distribution and installs the right package for you.
 
-### Option 2 — Manual
+### Option 2: Manual
 
 1. Download the package for your distribution from the
    [latest release](https://github.com/RackRunner1/ToolsBoXApp/releases/latest):
