@@ -57,6 +57,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_changes: ${{ steps.changes.outputs.has_changes }}
+      last_tag: ${{ steps.changes.outputs.last_tag }}
+      last_sha: ${{ steps.changes.outputs.last_sha }}
       version: ${{ steps.vars.outputs.version }}
       tag: ${{ steps.vars.outputs.tag }}
       date: ${{ steps.vars.outputs.date }}
@@ -105,18 +107,29 @@ jobs:
         run: |
           BRANCH="${{ steps.vars.outputs.branch }}"
 
+          # Any doubt below defaults to building (safe direction).
+          LATEST_TAG="$(curl -fsSL --max-time 30 \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/releases/latest \
+            2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('tag_name',''))" 2>/dev/null)"
+          echo "last_tag=${LATEST_TAG:-}" >> "$GITHUB_OUTPUT"
+
+          LAST_SHA=""
+          if [ -n "$LATEST_TAG" ]; then
+            if git fetch --depth 1 origin tag "$LATEST_TAG" 2>/dev/null; then
+              LAST_SHA="$(git show "$LATEST_TAG:contents/.sync-info.json" 2>/dev/null \
+                | python3 -c "import json,sys; print(json.load(sys.stdin).get('sourceSha',''))" 2>/dev/null)"
+            fi
+          fi
+          echo "last_sha=${LAST_SHA:-}" >> "$GITHUB_OUTPUT"
+
           if [ "${{ inputs.force }}" = "true" ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
             echo "Forced rebuild (force=true), skipping the upstream check."
             exit 0
           fi
 
-          # Any doubt below defaults to building (safe direction).
-          LATEST_TAG="$(curl -fsSL --max-time 30 \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/latest" \
-            2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('tag_name',''))" 2>/dev/null)"
           if [ -z "$LATEST_TAG" ]; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
             echo "No previous release found (or API unreachable), building."
@@ -124,11 +137,6 @@ jobs:
           fi
           echo "Latest release: $LATEST_TAG"
 
-          LAST_SHA=""
-          if git fetch --depth 1 origin tag "$LATEST_TAG" 2>/dev/null; then
-            LAST_SHA="$(git show "$LATEST_TAG:contents/.sync-info.json" 2>/dev/null \
-              | python3 -c "import json,sys; print(json.load(sys.stdin).get('sourceSha',''))" 2>/dev/null)"
-          fi
           UPSTREAM_SHA="$(git ls-remote "https://github.com/${{ env.TBX_SOURCE_REPO }}.git" "refs/heads/$BRANCH" 2>/dev/null | cut -f1)"
           echo "Source embedded in release $LATEST_TAG: ${LAST_SHA:-unknown}"
           echo "Upstream $BRANCH HEAD: ${UPSTREAM_SHA:-unknown}"
@@ -154,7 +162,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       # ---------------------------------------------------------------------
       # 1. Fetch the content from ToolsBoXMachine
@@ -288,26 +296,153 @@ jobs:
           cat artifacts/checksums.txt
 
       # ---------------------------------------------------------------------
-      # 6. Release notes (installation only)
+      # 6. Release notes (changelog Machine + App, comme ToolsBoXMachine)
       # ---------------------------------------------------------------------
       - name: Prepare the release notes
         if: needs.check.outputs.do_release == 'true'
         id: notes
+        env:
+          TAG: ${{ needs.check.outputs.tag }}
+          LAST_TAG: ${{ needs.check.outputs.last_tag }}
+          LAST_SHA: ${{ needs.check.outputs.last_sha }}
+          SOURCE_REPO: ${{ env.TBX_SOURCE_REPO }}
+          BRANCH: ${{ needs.check.outputs.branch }}
         run: |
-          TAG="${{ needs.check.outputs.tag }}"
-          RPM_ASSET="${{ steps.pkgs.outputs.rpm_asset }}"
-          DEB_ASSET="${{ steps.pkgs.outputs.deb_asset }}"
-          cat >> "$GITHUB_OUTPUT" <<EOF
-          body<<RELEASE_NOTES_EOF
-          ## ToolsBoXApp $TAG
+          echo "=== Generating notes ==="
+          echo "TAG: $TAG"
+          echo "LAST_TAG: $LAST_TAG"
+          echo "LAST_SHA: $LAST_SHA"
 
-          ### Installation
-          - Debian/Ubuntu: download \`$DEB_ASSET\` below, then \`sudo apt install ./$DEB_ASSET\`.
-          - Fedora/RHEL: download \`$RPM_ASSET\` below, then \`sudo dnf install ./$RPM_ASSET\`.
-          - Update: run \`tbxa update\` (fetches the latest release and reinstalls when newer).
-          - Uninstall: run \`tbxa uninstall\`.
-          RELEASE_NOTES_EOF
-          EOF
+          NEW_SHA="$(python3 -c "import json; print(json.load(open('contents/.sync-info.json')).get('sourceSha',''))" 2>/dev/null || true)"
+          echo "NEW_SHA: $NEW_SHA"
+
+          OUTPUT_FILE=$(mktemp)
+          FIX_FILE=$(mktemp)
+          FEAT_FILE=$(mktemp)
+          REFACTOR_FILE=$(mktemp)
+          PERF_FILE=$(mktemp)
+          STYLE_FILE=$(mktemp)
+          CHORE_FILE=$(mktemp)
+          DOCS_FILE=$(mktemp)
+          CI_FILE=$(mktemp)
+          TEST_FILE=$(mktemp)
+          OTHER_FILE=$(mktemp)
+
+          # Header identique a ToolsBoXMachine
+          {
+            echo "# 🪟 Build Name: ${TAG}"
+            echo ""
+            echo "## 🌟 What's Changed"
+            echo ""
+          } > "$OUTPUT_FILE"
+
+          COMMIT_REGEX='^([a-zA-Z]+)(\(([^)]+)\))?!?:\ (.+)$'
+
+          # Meme categorisation que ToolsBoXMachine, liste fusionnee Machine + App.
+          # Les commits chore(contents) de sync sont exclus (redondants avec le detail Machine).
+          categorize() {
+            while IFS='|' read -r HASH MSG; do
+              [ -z "$HASH" ] && continue
+              case "$MSG" in
+                "chore(contents):"*) continue ;;
+              esac
+              SHORT="${HASH:0:7}"
+
+              if [[ "$MSG" =~ $COMMIT_REGEX ]]; then
+                TYPE="${BASH_REMATCH[1]}"
+                SCOPE="${BASH_REMATCH[3]}"
+                COMMIT_MSG="${BASH_REMATCH[4]}"
+
+                if [ -n "$SCOPE" ]; then
+                  LINE="- ${TYPE}(${SCOPE}): ${COMMIT_MSG} (\`${SHORT}\`)"
+                else
+                  LINE="- ${TYPE}: ${COMMIT_MSG} (\`${SHORT}\`)"
+                fi
+
+                case "${TYPE,,}" in
+                  feat)     echo "$LINE" >> "$FEAT_FILE" ;;
+                  fix)      echo "$LINE" >> "$FIX_FILE" ;;
+                  chore)    echo "$LINE" >> "$CHORE_FILE" ;;
+                  docs)     echo "$LINE" >> "$DOCS_FILE" ;;
+                  style)    echo "$LINE" >> "$STYLE_FILE" ;;
+                  refactor) echo "$LINE" >> "$REFACTOR_FILE" ;;
+                  perf)     echo "$LINE" >> "$PERF_FILE" ;;
+                  ci)       echo "$LINE" >> "$CI_FILE" ;;
+                  test)     echo "$LINE" >> "$TEST_FILE" ;;
+                  *)        echo "$LINE" >> "$OTHER_FILE" ;;
+                esac
+              else
+                echo "- ${MSG} (\`${SHORT}\`)" >> "$OTHER_FILE"
+              fi
+            done
+          }
+
+          # -- Commits App depuis la derniere release App --
+          echo "App commits since ${LAST_TAG:-(none)}:"
+          if [ -n "$LAST_TAG" ] && git rev-parse "$LAST_TAG" >/dev/null 2>&1; then
+            git log "${LAST_TAG}..HEAD" --pretty=tformat:"%H|%s" --no-merges | tee /tmp/app-commits.txt | head -5
+            categorize < /tmp/app-commits.txt
+          else
+            echo "No last App tag, taking all App commits"
+            git log --pretty=tformat:"%H|%s" --no-merges | tee /tmp/app-commits.txt | head -5
+            categorize < /tmp/app-commits.txt
+          fi
+
+          # -- Commits Machine entre l'ancien et le nouveau sourceSha --
+          echo "Cloning $SOURCE_REPO for upstream log..."
+          rm -rf /tmp/tbxm-log
+          git clone --quiet "https://github.com/${SOURCE_REPO}.git" --branch "$BRANCH" /tmp/tbxm-log 2>/dev/null || echo "Upstream clone failed, skipping Machine commits."
+          if [ -d /tmp/tbxm-log ]; then
+            echo "Machine commits ${LAST_SHA:-?(none)}..${NEW_SHA:-HEAD}:"
+            if [ -n "$LAST_SHA" ] && [ -n "$NEW_SHA" ] && [ "$LAST_SHA" != "$NEW_SHA" ] \
+              && git -C /tmp/tbxm-log cat-file -e "${LAST_SHA}^{commit}" 2>/dev/null \
+              && git -C /tmp/tbxm-log cat-file -e "${NEW_SHA}^{commit}" 2>/dev/null; then
+              git -C /tmp/tbxm-log log "${LAST_SHA}..${NEW_SHA}" --pretty=tformat:"%H|%s" --no-merges | tee /tmp/machine-commits.txt | head -5
+              categorize < /tmp/machine-commits.txt
+            elif [ -n "$NEW_SHA" ] && git -C /tmp/tbxm-log cat-file -e "${NEW_SHA}^{commit}" 2>/dev/null; then
+              echo "No usable LAST_SHA, taking all Machine commits up to $NEW_SHA"
+              git -C /tmp/tbxm-log log "$NEW_SHA" --pretty=tformat:"%H|%s" --no-merges | tee /tmp/machine-commits.txt | head -5
+              categorize < /tmp/machine-commits.txt
+            else
+              echo "No usable NEW_SHA, taking latest Machine commits from $BRANCH"
+              git -C /tmp/tbxm-log log --pretty=tformat:"%H|%s" --no-merges | tee /tmp/machine-commits.txt | head -5
+              categorize < /tmp/machine-commits.txt
+            fi
+            rm -rf /tmp/tbxm-log
+          fi
+
+          # Sections dans le meme ordre que ToolsBoXMachine
+          append_section() {
+            local file="$1"
+            local title="$2"
+            if [ -s "$file" ]; then
+              echo "### $title" >> "$OUTPUT_FILE"
+              echo "" >> "$OUTPUT_FILE"
+              cat "$file" >> "$OUTPUT_FILE"
+              echo "" >> "$OUTPUT_FILE"
+            fi
+          }
+
+          append_section "$FIX_FILE" "🐛 Fixed"
+          append_section "$FEAT_FILE" "➕ Added or Removed"
+          append_section "$REFACTOR_FILE" "♻️ Refactored"
+          append_section "$PERF_FILE" "⚡ Performance"
+          append_section "$STYLE_FILE" "💄 Style"
+          append_section "$CHORE_FILE" "🔧 Chores"
+          append_section "$DOCS_FILE" "📚 Documentation"
+          append_section "$CI_FILE" "🔄 CI"
+          append_section "$TEST_FILE" "✅ Tests"
+          append_section "$OTHER_FILE" "📦 Other"
+
+          rm -f "$FIX_FILE" "$FEAT_FILE" "$REFACTOR_FILE" "$PERF_FILE" "$STYLE_FILE" "$CHORE_FILE" "$DOCS_FILE" "$CI_FILE" "$TEST_FILE" "$OTHER_FILE"
+
+          {
+            echo "body<<RELEASEEOF"
+            cat "$OUTPUT_FILE"
+            echo "RELEASEEOF"
+          } >> "$GITHUB_OUTPUT"
+
+          rm -f "$OUTPUT_FILE"
 
       # ---------------------------------------------------------------------
       # 7. Publish the release
@@ -320,6 +455,7 @@ jobs:
           name: ${{ needs.check.outputs.tag }}
           body: ${{ steps.notes.outputs.body }}
           make_latest: true
+          generate_release_notes: false
           fail_on_unmatched_files: false
           files: |
             artifacts/*.rpm
