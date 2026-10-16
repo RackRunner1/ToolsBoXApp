@@ -442,15 +442,39 @@ fn json_asset_objects(doc: &str) -> Vec<&str> {
     objects
 }
 
+/// Architecture markers for asset-name matching (same chip, different names
+/// per ecosystem): `x86_64` also matches `amd64`/`x86-64`, `aarch64` also
+/// matches `arm64`; any other architecture matches its own name.
+fn arch_markers_for(arch: &str) -> Vec<String> {
+    match arch {
+        "x86_64" => vec![
+            "x86_64".to_string(),
+            "amd64".to_string(),
+            "x86-64".to_string(),
+        ],
+        "aarch64" => vec!["aarch64".to_string(), "arm64".to_string()],
+        _ => vec![arch.to_string()],
+    }
+}
+
 /// `(tag_name, package_download_url)` from a GitHub "latest release" response
-/// for the given asset extension (`".rpm"`, `".deb"` or `".pkg.tar.zst"`).
-/// Prefers an asset with `x86_64`/`amd64` in its name.
-fn parse_latest_release_for(doc: &str, extension: &str) -> Result<(String, String), String> {
+/// for the given asset extension (`".rpm"`, `".deb"` or `".pkg.tar.zst"`),
+/// matching the given host architecture (see [`arch_markers_for`]).
+///
+/// Strict on architecture: when assets exist for the extension but none
+/// matches the host, this returns an error instead of a foreign-arch
+/// package (e.g. an `x86_64` build offered to an ARM machine).
+fn parse_latest_release_for_arch(
+    doc: &str,
+    extension: &str,
+    arch: &str,
+) -> Result<(String, String), String> {
     let tag = json_string_value(doc, "tag_name")
         .filter(|tag| !tag.is_empty())
         .ok_or_else(|| "could not read tag_name from the GitHub response".to_string())?;
 
-    let mut fallback: Option<String> = None;
+    let markers = arch_markers_for(arch);
+    let mut candidates: Vec<String> = Vec::new();
     for object in json_asset_objects(doc) {
         let name = json_string_value(object, "name").unwrap_or_default();
         if !name.ends_with(extension) {
@@ -460,22 +484,29 @@ fn parse_latest_release_for(doc: &str, extension: &str) -> Result<(String, Strin
         if url.is_empty() {
             continue;
         }
+        candidates.push(name.clone());
         let lower = name.to_lowercase();
-        if lower.contains("x86_64") || lower.contains("amd64") || lower.contains("x86-64") {
+        if markers.iter().any(|marker| lower.contains(marker.as_str())) {
             return Ok((tag, url));
-        }
-        if fallback.is_none() {
-            fallback = Some(url);
         }
     }
 
-    fallback
-        .map(|url| (tag.clone(), url))
-        .ok_or_else(|| format!("no {extension} asset found in the latest release"))
+    if candidates.is_empty() {
+        return Err(format!("no {extension} asset found in the latest release"));
+    }
+    Err(format!(
+        "no {extension} asset matches this machine ({arch}) in the latest release ({}); refusing a foreign-arch package",
+        candidates.join(", ")
+    ))
+}
+
+/// `(tag_name, package_download_url)` from a GitHub "latest release" response
+/// for the current host architecture.
+fn parse_latest_release_for(doc: &str, extension: &str) -> Result<(String, String), String> {
+    parse_latest_release_for_arch(doc, extension, std::env::consts::ARCH)
 }
 
 /// `(tag_name, rpm_download_url)` from a GitHub "latest release" response.
-/// Prefers an asset with `x86_64`/`amd64` in its name.
 ///
 /// Shorthand for `parse_latest_release_for(doc, ".rpm")`; kept for tests.
 #[cfg(test)]
@@ -536,6 +567,80 @@ fn download_file(url: &str, dest: &std::path::Path) -> Result<(), String> {
         return Err("download failed (network issue?)".to_string());
     }
     Ok(())
+}
+
+/// `browser_download_url` of the `checksums.txt` release asset, if published.
+/// The release pipeline (`daily-release.yml`) always uploads `checksums.txt`
+/// (`sha256sum` of every package); that exact name wins, anything else
+/// matching `sha256`/`checksum` is only a fallback.
+fn find_checksums_url(doc: &str) -> Option<String> {
+    let mut fallback: Option<String> = None;
+    for object in json_asset_objects(doc) {
+        let name = json_string_value(object, "name").unwrap_or_default();
+        let url = json_string_value(object, "browser_download_url").unwrap_or_default();
+        if url.is_empty() {
+            continue;
+        }
+        if name == "checksums.txt" {
+            return Some(url);
+        }
+        let lower = name.to_lowercase();
+        if (lower.contains("sha256") || lower.contains("checksum")) && fallback.is_none() {
+            fallback = Some(url);
+        }
+    }
+    fallback
+}
+
+/// SHA-256 hex digest of a file via `sha256sum` (else `shasum -a 256`).
+fn sha256_of(path: &std::path::Path) -> Result<String, String> {
+    let arg = path.to_string_lossy().to_string();
+    let output = if has_tool("sha256sum") {
+        run_capture("sha256sum", &[arg.as_str()])?
+    }
+    else if has_tool("shasum") {
+        run_capture("shasum", &["-a", "256", arg.as_str()])?
+    }
+    else {
+        return Err(
+            "neither sha256sum nor shasum was found; cannot verify the download.".to_string(),
+        );
+    };
+    output
+        .split_whitespace()
+        .next()
+        .filter(|hash| hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()))
+        .map(str::to_string)
+        .ok_or_else(|| "could not read the SHA-256 digest of the download.".to_string())
+}
+
+/// Checks `actual_hash` against the `checksums.txt` contents for `asset_name`.
+/// `checksums.txt` uses `sha256sum` output format (`"<hash>  <basename>"`);
+/// the filename must match exactly so a similarly-named file cannot stand in.
+fn check_sha256(checksums: &str, asset_name: &str, actual_hash: &str) -> Result<(), String> {
+    for line in checksums.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        if fields.len() < 2 {
+            continue;
+        }
+        let hash = fields[0];
+        if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+            continue;
+        }
+        let named = fields[1..].iter().any(|field| {
+            let base = field.trim_start_matches('*');
+            base == asset_name || base.rsplit('/').next().unwrap_or(base) == asset_name
+        });
+        if named {
+            if hash.eq_ignore_ascii_case(actual_hash) {
+                return Ok(());
+            }
+            return Err(format!(
+                "SHA-256 mismatch for {asset_name} (release lists {hash}, download hashes to {actual_hash}). Aborting."
+            ));
+        }
+    }
+    Err(format!("no SHA-256 entry for {asset_name} in checksums.txt"))
 }
 
 /// Package manager used for installs, matching the native package format:
@@ -717,6 +822,46 @@ fn cmd_update(prog: &str) -> i32 {
         return 1;
     }
 
+    // HTTPS alone proves transport security, not artifact authenticity:
+    // every release publishes checksums.txt, so refuse to install a
+    // package that does not match its published SHA-256 hash.
+    println!("Verifying SHA-256 against checksums.txt...");
+    let sums_url = match find_checksums_url(&doc) {
+        Some(url) => url,
+        None => {
+            eprintln!("{prog} update: no checksums.txt asset in release {tag}; refusing an unverifiable package.");
+            return 1;
+        }
+    };
+    let sums_dest = std::env::temp_dir().join(format!(
+        "tbxa-update-{}-checksums.txt",
+        std::process::id()
+    ));
+    if let Err(error) = download_file(&sums_url, &sums_dest) {
+        eprintln!("{prog} update: {error}");
+        return 1;
+    }
+    let sums = match std::fs::read_to_string(&sums_dest) {
+        Ok(sums) => sums,
+        Err(error) => {
+            eprintln!("{prog} update: cannot read checksums.txt: {error}");
+            return 1;
+        }
+    };
+    let _ = std::fs::remove_file(&sums_dest);
+    let actual = match sha256_of(&dest) {
+        Ok(actual) => actual,
+        Err(error) => {
+            eprintln!("{prog} update: {error}");
+            return 1;
+        }
+    };
+    if let Err(error) = check_sha256(&sums, file_name, &actual) {
+        eprintln!("{prog} update: {error}");
+        return 1;
+    }
+    println!("SHA-256 verified: {file_name} ({actual}).");
+
     println!(
         "Installing with {} (root privileges required)...",
         manager.program()
@@ -808,13 +953,59 @@ mod tests {
     }
 
     #[test]
-    fn parses_latest_release_falls_back_to_any_rpm() {
+    fn refuses_foreign_arch_asset() {
+        // Only an ARM build published: an x86_64 machine must fail,
+        // not silently install the wrong architecture.
         let doc = r#"{"tag_name": "20261011", "assets": [
           {"name": "other-1.aarch64.rpm", "browser_download_url": "https://example.com/other.rpm"}
         ]}"#;
-        let (tag, url) = parse_latest_release(doc).unwrap();
-        assert_eq!(tag, "20261011");
-        assert_eq!(url, "https://example.com/other.rpm");
+        assert!(parse_latest_release_for_arch(doc, ".rpm", "x86_64").is_err());
+        // And vice versa.
+        let doc = r#"{"tag_name": "20261011", "assets": [
+          {"name": "other-1.x86_64.rpm", "browser_download_url": "https://example.com/other.rpm"}
+        ]}"#;
+        assert!(parse_latest_release_for_arch(doc, ".rpm", "aarch64").is_err());
+        // Each architecture matches its own naming.
+        let doc = r#"{"tag_name": "20261011", "assets": [
+          {"name": "toolsboxapp_1_amd64.deb", "browser_download_url": "https://example.com/amd64.deb"},
+          {"name": "toolsboxapp_1_arm64.deb", "browser_download_url": "https://example.com/arm64.deb"}
+        ]}"#;
+        let (_, url) = parse_latest_release_for_arch(doc, ".deb", "aarch64").unwrap();
+        assert_eq!(url, "https://example.com/arm64.deb");
+        let (_, url) = parse_latest_release_for_arch(doc, ".deb", "x86_64").unwrap();
+        assert_eq!(url, "https://example.com/amd64.deb");
+        // Unknown architectures match their own name.
+        let doc = r#"{"tag_name": "20261011", "assets": [
+          {"name": "other-1.riscv64.rpm", "browser_download_url": "https://example.com/other.rpm"}
+        ]}"#;
+        assert!(parse_latest_release_for_arch(doc, ".rpm", "riscv64").is_ok());
+        assert!(parse_latest_release_for_arch(doc, ".rpm", "x86_64").is_err());
+    }
+
+    #[test]
+    fn finds_checksums_url() {
+        assert_eq!(
+            find_checksums_url(RELEASE_FIXTURE).as_deref(),
+            Some("https://example.com/checksums.txt")
+        );
+        let doc = r#"{"assets": [
+          {"name": "app.rpm", "browser_download_url": "https://example.com/app.rpm"}
+        ]}"#;
+        assert_eq!(find_checksums_url(doc), None);
+    }
+
+    #[test]
+    fn verifies_sha256_entries() {
+        let sums = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  app.rpm\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  other.deb\n";
+        assert!(check_sha256(sums, "app.rpm", &"a".repeat(64)).is_ok());
+        // Digests compare case-insensitively.
+        assert!(check_sha256(sums, "other.deb", &"B".repeat(64)).is_ok());
+        // Mismatch and missing entries fail closed.
+        assert!(check_sha256(sums, "app.rpm", &"b".repeat(64)).is_err());
+        assert!(check_sha256(sums, "missing.rpm", &"a".repeat(64)).is_err());
+        // A similarly-named file cannot stand in for the real asset.
+        let trap = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  app.rpm.bak\n";
+        assert!(check_sha256(trap, "app.rpm", &"c".repeat(64)).is_err());
     }
 
     #[test]
