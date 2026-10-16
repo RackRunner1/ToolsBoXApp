@@ -2,6 +2,7 @@
 //!
 //! Commands:
 //!   tbxa update    - install the latest .rpm/.deb/.pkg.tar.zst from GitHub releases.
+//!   tbxa reinstall - force-reinstall the latest published package.
 //!   tbxa uninstall - remove the ToolsBoXApp package.
 //!   tbxa --version - print the installed version.
 //!
@@ -24,6 +25,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let code = match args.first().map(String::as_str) {
         Some("update") => cmd_update(&prog),
+        Some("reinstall") => cmd_reinstall(&prog),
         Some("uninstall") => cmd_uninstall(&prog),
         Some("-h") | Some("--help") | None => {
             print_help(&prog);
@@ -58,6 +60,7 @@ fn print_help(prog: &str) {
     println!("Commands:");
     println!("  update      Download the latest .rpm/.deb/.pkg.tar.zst from GitHub releases");
     println!("              and reinstall the app");
+    println!("  reinstall   Force-reinstall the latest release");
     println!("  uninstall   Remove the ToolsBoXApp package");
     println!("  --version   Print the installed version");
     println!("  --help      Print this help");
@@ -740,17 +743,10 @@ fn cmd_update(prog: &str) -> i32 {
     println!("Installed version: {current}");
     println!("Checking {REPO} for the latest release...");
 
-    let doc = match fetch_url(API_URL) {
-        Ok(doc) => doc,
+    let (doc, tag, url) = match fetch_latest(prog, "update", kind) {
+        Ok(triple) => triple,
         Err(error) => {
-            eprintln!("{prog} update: {error}");
-            return 1;
-        }
-    };
-    let (tag, url) = match parse_latest_release_for(&doc, kind.extension()) {
-        Ok(pair) => pair,
-        Err(error) => {
-            eprintln!("{prog} update: {error}");
+            eprintln!("{error}");
             return 1;
         }
     };
@@ -759,27 +755,73 @@ fn cmd_update(prog: &str) -> i32 {
     // No version comparison here on purpose: release tags are free-form
     // (they can be customized on manual runs), so `update` always installs
     // the latest published package instead of guessing from tag names.
+    install_release(prog, "update", &doc, kind, &tag, &url)
+}
+
+/// `(release doc, tag, package url)` of the latest release asset for `kind`.
+fn fetch_latest(prog: &str, op: &str, kind: PkgKind) -> Result<(String, String, String), String> {
+    let doc = fetch_url(API_URL).map_err(|error| format!("{prog} {op}: {error}"))?;
+    let (tag, url) = parse_latest_release_for(&doc, kind.extension())
+        .map_err(|error| format!("{prog} {op}: {error}"))?;
+    Ok((doc, tag, url))
+}
+
+fn cmd_reinstall(prog: &str) -> i32 {
+    let kind = match installed_package() {
+        Ok((_, kind)) => kind,
+        Err(error) => {
+            eprintln!("{prog} reinstall: {error}");
+            return 1;
+        }
+    };
+
+    // Like `update`: reinstall the latest published package (release tags
+    // are free-form, so nothing is resolved from the installed version).
+    println!("Checking {REPO} for the latest release...");
+
+    let (doc, tag, url) = match fetch_latest(prog, "reinstall", kind) {
+        Ok(triple) => triple,
+        Err(error) => {
+            eprintln!("{error}");
+            return 1;
+        }
+    };
+    println!("Latest release: {tag}");
+    install_release(prog, "reinstall", &doc, kind, &tag, &url)
+}
+
+/// Downloads the release package for `kind`, verifies its SHA-256 against
+/// the release's checksums.txt and installs it. `op` is `"update"` or
+/// `"reinstall"` (used in messages and temp file names).
+fn install_release(
+    prog: &str,
+    op: &str,
+    doc: &str,
+    kind: PkgKind,
+    tag: &str,
+    url: &str,
+) -> i32 {
     let manager = match package_manager(kind) {
         Ok(manager) => manager,
         Err(error) => {
-            eprintln!("{prog} update: {error}");
+            eprintln!("{prog} {op}: {error}");
             return 1;
         }
     };
 
     let default_name = match kind {
-        PkgKind::Deb => "toolsboxapp-update.deb",
-        PkgKind::Rpm => "toolsboxapp-update.rpm",
-        PkgKind::Pacman => "toolsboxapp-update.pkg.tar.zst",
+        PkgKind::Deb => format!("toolsboxapp-{op}.deb"),
+        PkgKind::Rpm => format!("toolsboxapp-{op}.rpm"),
+        PkgKind::Pacman => format!("toolsboxapp-{op}.pkg.tar.zst"),
     };
-    let file_name = url.rsplit('/').next().unwrap_or(default_name);
+    let file_name = url.rsplit('/').next().unwrap_or(default_name.as_str());
     let dest = std::env::temp_dir().join(format!(
-        "tbxa-update-{}-{file_name}",
+        "tbxa-{op}-{}-{file_name}",
         std::process::id()
     ));
     println!("Downloading {}...", dest.to_string_lossy());
-    if let Err(error) = download_file(&url, &dest) {
-        eprintln!("{prog} update: {error}");
+    if let Err(error) = download_file(url, &dest) {
+        eprintln!("{prog} {op}: {error}");
         return 1;
     }
 
@@ -787,25 +829,25 @@ fn cmd_update(prog: &str) -> i32 {
     // every release publishes checksums.txt, so refuse to install a
     // package that does not match its published SHA-256 hash.
     println!("Verifying SHA-256 against checksums.txt...");
-    let sums_url = match find_checksums_url(&doc) {
+    let sums_url = match find_checksums_url(doc) {
         Some(url) => url,
         None => {
-            eprintln!("{prog} update: no checksums.txt asset in release {tag}; refusing an unverifiable package.");
+            eprintln!("{prog} {op}: no checksums.txt asset in release {tag}; refusing an unverifiable package.");
             return 1;
         }
     };
     let sums_dest = std::env::temp_dir().join(format!(
-        "tbxa-update-{}-checksums.txt",
+        "tbxa-{op}-{}-checksums.txt",
         std::process::id()
     ));
     if let Err(error) = download_file(&sums_url, &sums_dest) {
-        eprintln!("{prog} update: {error}");
+        eprintln!("{prog} {op}: {error}");
         return 1;
     }
     let sums = match std::fs::read_to_string(&sums_dest) {
         Ok(sums) => sums,
         Err(error) => {
-            eprintln!("{prog} update: cannot read checksums.txt: {error}");
+            eprintln!("{prog} {op}: cannot read checksums.txt: {error}");
             return 1;
         }
     };
@@ -813,12 +855,12 @@ fn cmd_update(prog: &str) -> i32 {
     let actual = match sha256_of(&dest) {
         Ok(actual) => actual,
         Err(error) => {
-            eprintln!("{prog} update: {error}");
+            eprintln!("{prog} {op}: {error}");
             return 1;
         }
     };
     if let Err(error) = check_sha256(&sums, file_name, &actual) {
-        eprintln!("{prog} update: {error}");
+        eprintln!("{prog} {op}: {error}");
         return 1;
     }
     println!("SHA-256 verified: {file_name} ({actual}).");
@@ -830,11 +872,16 @@ fn cmd_update(prog: &str) -> i32 {
     let result = run_package_manager(manager, "install", &dest.to_string_lossy());
     let _ = std::fs::remove_file(&dest);
     if let Err(error) = result {
-        eprintln!("{prog} update: {error}");
+        eprintln!("{prog} {op}: {error}");
         return 1;
     }
 
-    println!("Update installed. Restart the app if it was running.");
+    if op == "update" {
+        println!("Update installed. Restart the app if it was running.");
+    }
+    else {
+        println!("Reinstall finished. Restart the app if it was running.");
+    }
     0
 }
 
