@@ -731,6 +731,30 @@ fn package_manager(kind: PkgKind) -> Result<Manager, String> {
     }
 }
 
+/// Caches sudo credentials upfront (prompts now when needed) so later sudo
+/// calls reuse them silently instead of prompting mid-display.
+/// No-op when already root.
+fn sudo_auth(prog: &str, op: &str) -> Result<(), String> {
+    if is_root() {
+        return Ok(());
+    }
+    if !has_tool("sudo") {
+        return Err("root privileges are required: run as root or install sudo.".to_string());
+    }
+    let status = Command::new("sudo").arg("-v").status().map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            "sudo is required but not installed.".to_string()
+        }
+        else {
+            format!("cannot run sudo: {error}")
+        }
+    })?;
+    if !status.success() {
+        return Err(format!("{prog} {op}: sudo authentication failed."));
+    }
+    Ok(())
+}
+
 /// Runs the package manager, with sudo unless already root.
 /// `operation` is "install" (target is a package file) or "remove"
 /// (target is a package name).
@@ -798,6 +822,10 @@ fn cmd_update(prog: &str) -> i32 {
             return 1;
         }
     };
+    if let Err(error) = sudo_auth(prog, "update") {
+        eprintln!("{error}");
+        return 1;
+    }
 
     print_banner();
 
@@ -834,6 +862,11 @@ fn cmd_reinstall(prog: &str) -> i32 {
 
     // Like `update`: reinstall the latest published package (release tags
     // are free-form, so nothing is resolved from the installed version).
+    if let Err(error) = sudo_auth(prog, "reinstall") {
+        eprintln!("{error}");
+        return 1;
+    }
+
     print_banner();
 
     let (doc, tag, url) = match fetch_latest(prog, "reinstall", kind) {
@@ -951,6 +984,11 @@ fn cmd_uninstall(prog: &str) -> i32 {
             return 1;
         }
     };
+
+    if let Err(error) = sudo_auth(prog, "uninstall") {
+        eprintln!("{error}");
+        return 1;
+    }
 
     print_banner();
     let bar = Progress::new();
