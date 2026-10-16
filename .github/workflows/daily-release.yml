@@ -14,7 +14,9 @@ name: Daily Build & Release
 # with the current upstream HEAD: when ToolsBoXMachine has not moved, the
 # `build` job is skipped entirely (no identical rebuild, no empty release).
 # Pass `force: true` on manual runs to rebuild anyway (e.g. after app-code
-# changes with no upstream movement).
+# changes with no upstream movement). A forced manual run can also set
+# `custom_tag` and `release_name` to override the date-based tag and the
+# release title.
 
 on:
   schedule:
@@ -37,6 +39,14 @@ on:
         description: "Bypass the upstream-change check and build anyway"
         type: boolean
         default: false
+      custom_tag:
+        description: "Custom tag (only used together with force=true)"
+        type: string
+        default: ""
+      release_name:
+        description: "Custom release name (defaults to the tag)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -61,6 +71,7 @@ jobs:
       last_sha: ${{ steps.changes.outputs.last_sha }}
       version: ${{ steps.vars.outputs.version }}
       tag: ${{ steps.vars.outputs.tag }}
+      release_name: ${{ steps.vars.outputs.name }}
       date: ${{ steps.vars.outputs.date }}
       branch: ${{ steps.vars.outputs.branch }}
       do_sync: ${{ steps.vars.outputs.do_sync }}
@@ -90,15 +101,27 @@ jobs:
             DO_SYNC=true
             DO_RELEASE=true
           fi
+          # Forced manual run: allow overriding the tag and the release name.
+          # (The package version itself stays date-based.)
+          FORCE="${{ inputs.force }}"
+          CUSTOM_TAG="${{ inputs.custom_tag }}"
+          RELEASE_NAME="${{ inputs.release_name }}"
+          if [ "$FORCE" = "true" ] && [ -n "$CUSTOM_TAG" ]; then
+            TAG="$CUSTOM_TAG"
+          elif [ -n "$CUSTOM_TAG" ]; then
+            echo "custom_tag is ignored without force=true."
+          fi
+          [ -z "$RELEASE_NAME" ] && RELEASE_NAME="$TAG"
           {
             echo "version=$VERSION"
             echo "tag=$TAG"
+            echo "name=$RELEASE_NAME"
             echo "date=$DATE"
             echo "branch=$BRANCH"
             echo "do_sync=$DO_SYNC"
             echo "do_release=$DO_RELEASE"
           } >> "$GITHUB_OUTPUT"
-          echo "Build $TAG (version $VERSION) - sync=$DO_SYNC release=$DO_RELEASE branch=$BRANCH"
+          echo "Build $TAG ($RELEASE_NAME, version $VERSION) - sync=$DO_SYNC release=$DO_RELEASE branch=$BRANCH"
 
       - name: Check for upstream changes since the latest release
         id: changes
@@ -314,6 +337,7 @@ jobs:
         id: notes
         env:
           TAG: ${{ needs.check.outputs.tag }}
+          NAME: ${{ needs.check.outputs.release_name }}
           LAST_TAG: ${{ needs.check.outputs.last_tag }}
           LAST_SHA: ${{ needs.check.outputs.last_sha }}
           SOURCE_REPO: ${{ env.TBX_SOURCE_REPO }}
@@ -341,7 +365,7 @@ jobs:
 
           # Header identique a ToolsBoXMachine
           {
-            echo "# 🪟 Build Name: ${TAG}"
+            echo "# 🪟 Build Name: ${NAME}"
             echo ""
             echo "## 🌟 What's Changed"
             echo ""
@@ -458,12 +482,12 @@ jobs:
       # ---------------------------------------------------------------------
       # 7. Publish the release
       # ---------------------------------------------------------------------
-      - name: Publish the ${{ needs.check.outputs.tag }} release
+      - name: Publish the ${{ needs.check.outputs.release_name }} release
         if: needs.check.outputs.do_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check.outputs.tag }}
-          name: ${{ needs.check.outputs.tag }}
+          name: ${{ needs.check.outputs.release_name }}
           body: ${{ steps.notes.outputs.body }}
           make_latest: true
           generate_release_notes: false
