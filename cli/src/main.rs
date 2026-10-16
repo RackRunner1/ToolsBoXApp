@@ -20,7 +20,8 @@ use std::process::Command;
 
 const API_URL: &str = "https://api.github.com/repos/RackRunner1/ToolsBoXApp/releases/latest";
 
-/// ToolsBoXApp ASCII banner, always preceded by two blank lines.
+/// ToolsBoXApp ASCII banner, preceded by two blank lines and followed by one,
+/// so the progress bar and the final message stand apart from it.
 const BANNER: &str = r"████████╗ ██████╗  ██████╗ ██╗     ███████╗██████╗  ██████╗ ██╗  ██╗ █████╗ ██████╗ ██████╗ 
 ╚══██╔══╝██╔═══██╗██╔═══██╗██║     ██╔════╝██╔══██╗██╔═══██╗╚██╗██╔╝██╔══██╗██╔══██╗██╔══██╗
    ██║   ██║   ██║██║   ██║██║     ███████╗██████╔╝██║   ██║ ╚███╔╝ ███████║██████╔╝██████╔╝
@@ -28,11 +29,13 @@ const BANNER: &str = r"████████╗ ██████╗  ██
    ██║   ╚██████╔╝╚██████╔╝███████╗███████║██████╔╝╚██████╔╝██╔╝ ██╗██║  ██║██║     ██║     
    ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝╚══════╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝     ";
 
-/// Prints two blank lines, then the banner. Every operation starts with this.
+/// Prints two blank lines, then the banner, then one blank line.
+/// Every operation starts with this.
 fn print_banner() {
     println!();
     println!();
     println!("{BANNER}");
+    println!();
 }
 
 /// Single-line progress bar (`████████░░░░░░  42%`): redrawn in place on a
