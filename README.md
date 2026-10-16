@@ -16,7 +16,7 @@ up to date.
 
 - ✅ Debian, Ubuntu and derivatives (`.deb` package)
 - ✅ Fedora, Red Hat and derivatives (`.rpm` package)
-- 🔜 Arch Linux support is coming next week
+- ✅ Arch Linux and derivatives (`.pkg.tar.zst` package)
 
 ## Installation
 
@@ -34,13 +34,17 @@ The script detects your distribution and installs the right package for you.
 
 1. Download the package for your distribution from the
    [latest release](https://github.com/RackRunner1/ToolsBoXApp/releases/latest):
-   the `.deb` file for Debian/Ubuntu, the `.rpm` file for Fedora/Red Hat.
+   the `.deb` file for Debian/Ubuntu, the `.rpm` file for Fedora/Red Hat,
+   the `.pkg.tar.zst` file for Arch Linux.
 2. Install it:
    - Debian/Ubuntu: `sudo apt install ./<file>.deb`
    - Fedora/Red Hat: `sudo dnf install ./<file>.rpm`
+   - Arch Linux: `sudo pacman -U ./<file>.pkg.tar.zst`
 
 ## Update & uninstall
 
-- Update: `tbxa update`
-- Uninstall: `tbxa uninstall`
+`tbxa` and `tbxm` are the same command (alias):
+
+- Update: `tbxa update` (or `tbxm update`)
+- Uninstall: `tbxa uninstall` (or `tbxm uninstall`)
 

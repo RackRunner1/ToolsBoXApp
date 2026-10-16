@@ -1,14 +1,14 @@
 name: Daily Build & Release
 
-# Daily build of ToolsBoXApp (x64 DEB + RPM packages) from the content synced
+# Daily build of ToolsBoXApp (x64 DEB + RPM + Arch packages) from the content synced
 # from ToolsBoXMachine, then publication as a GitHub release.
 #
 # - every day at midnight (UTC)
 # - or on demand from the repository Actions tab
 #
-# Linux only. Both packages also install the `tbxa` terminal companion
-# (`tbxa update` / `tbxa uninstall`): .deb for Debian/Ubuntu, .rpm for
-# Fedora/RHEL.
+# Linux only. All packages also install the `tbxa`/`tbxm` terminal companion
+# (`tbxa update` / `tbxa uninstall` / same with `tbxm`): .deb for
+# Debian/Ubuntu, .rpm for Fedora/RHEL, .pkg.tar.zst for Arch Linux.
 #
 # The `check` job compares the source commit embedded in the latest release
 # with the current upstream HEAD: when ToolsBoXMachine has not moved, the
@@ -150,7 +150,7 @@ jobs:
           fi
 
   # -----------------------------------------------------------------------
-  # Full pipeline: sync, build the DEB + RPM, publish the release.
+  # Full pipeline: sync, build the DEB + RPM + Arch packages, publish the release.
   # Runs only when the check job detected upstream changes.
   # -----------------------------------------------------------------------
   build:
@@ -229,7 +229,7 @@ jobs:
             libxdo-dev libssl-dev \
             libayatana-appindicator3-dev librsvg2-dev \
             libwebkit2gtk-4.1-dev \
-            rpm rsync python3-pil
+            rpm rsync python3-pil zstd
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -250,9 +250,11 @@ jobs:
           cargo build --release --manifest-path cli/Cargo.toml
           ls -la cli/target/release/tbxa
           ./cli/target/release/tbxa --help
+          cp cli/target/release/tbxa /tmp/tbxm
+          /tmp/tbxm --help | grep -q "tbxm"
 
       # ---------------------------------------------------------------------
-      # 5. Build the x64 DEB + RPM packages
+      # 5. Build the x64 DEB + RPM + Arch packages
       # ---------------------------------------------------------------------
       - name: Build (release) + DEB/RPM bundlers
         working-directory: app
@@ -279,20 +281,29 @@ jobs:
           echo "--- rpm contents ---"
           rpm -qlp "artifacts/$(basename "$RPM")" | tee /tmp/rpm-list.txt
           grep -q "/usr/bin/tbxa" /tmp/rpm-list.txt || { echo "tbxa missing from the RPM!" >&2; exit 1; }
+          grep -q "/usr/bin/tbxm" /tmp/rpm-list.txt || { echo "tbxm missing from the RPM!" >&2; exit 1; }
           grep -q "/usr/bin/toolsboxapp" /tmp/rpm-list.txt || { echo "app binary missing from the RPM!" >&2; exit 1; }
           grep -q "\.desktop$" /tmp/rpm-list.txt || { echo "desktop file missing from the RPM!" >&2; exit 1; }
-          echo "RPM verified: app binary, tbxa and desktop file present."
+          echo "RPM verified: app binary, tbxa, tbxm and desktop file present."
 
           echo "--- deb info ---"
           dpkg-deb --info "artifacts/$(basename "$DEB")"
           echo "--- deb contents ---"
           dpkg-deb --contents "artifacts/$(basename "$DEB")" | tee /tmp/deb-list.txt
           grep -q "usr/bin/tbxa" /tmp/deb-list.txt || { echo "tbxa missing from the DEB!" >&2; exit 1; }
+          grep -q "usr/bin/tbxm" /tmp/deb-list.txt || { echo "tbxm missing from the DEB!" >&2; exit 1; }
           grep -q "usr/bin/toolsboxapp" /tmp/deb-list.txt || { echo "app binary missing from the DEB!" >&2; exit 1; }
           grep -q "\.desktop$" /tmp/deb-list.txt || { echo "desktop file missing from the DEB!" >&2; exit 1; }
-          echo "DEB verified: app binary, tbxa and desktop file present."
+          echo "DEB verified: app binary, tbxa, tbxm and desktop file present."
 
           (cd artifacts && sha256sum *.rpm *.deb > checksums.txt)
+          cat artifacts/checksums.txt
+
+      - name: Build the Arch Linux package (.pkg.tar.zst)
+        run: |
+          ./scripts/build-arch-pkg.sh "${{ needs.check.outputs.version }}"
+          ls -la artifacts/*.pkg.tar.zst
+          (cd artifacts && sha256sum *.pkg.tar.zst >> checksums.txt)
           cat artifacts/checksums.txt
 
       # ---------------------------------------------------------------------
@@ -460,4 +471,5 @@ jobs:
           files: |
             artifacts/*.rpm
             artifacts/*.deb
+            artifacts/*.pkg.tar.zst
             artifacts/checksums.txt

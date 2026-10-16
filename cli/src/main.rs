@@ -1,16 +1,19 @@
-//! tbxa - terminal companion for ToolsBoXApp.
+//! tbxa (alias tbxm) - terminal companion for ToolsBoXApp.
 //!
 //! Commands:
-//!   tbxa update    - fetch the latest .rpm/.deb from GitHub releases and reinstall
+//!   tbxa update    - fetch the latest .rpm/.deb/.pkg.tar.zst from GitHub releases
 //!                    when it is newer than the installed version.
 //!   tbxa uninstall - remove the ToolsBoXApp package.
 //!   tbxa --version - print the installed version.
 //!
+//! `tbxm` is an alias: both names behave identically.
+//!
 //! The installed package name and version are discovered at runtime through
-//! the RPM database (the package owning this very executable) or the DPKG
-//! database on Debian/Ubuntu, so no name is hardcoded. External tools used:
-//! `rpm`/`dpkg-query`, `curl`, `dnf`/`yum` or `apt-get`, `sudo`
-//! (only when not running as root).
+//! the RPM database (the package owning this very executable), the DPKG
+//! database on Debian/Ubuntu, or pacman on Arch Linux, so no name is
+//! hardcoded. External tools used:
+//! `rpm`/`dpkg-query`/`pacman -Qo`, `curl`, `dnf`/`yum`, `apt-get` or
+//! `pacman -U`/`pacman -R`, `sudo` (only when not running as root).
 
 use std::process::Command;
 
@@ -18,34 +21,49 @@ const REPO: &str = "RackRunner1/ToolsBoXApp";
 const API_URL: &str = "https://api.github.com/repos/RackRunner1/ToolsBoXApp/releases/latest";
 
 fn main() {
+    let prog = prog_name();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let code = match args.first().map(String::as_str) {
-        Some("update") => cmd_update(),
-        Some("uninstall") => cmd_uninstall(),
+        Some("update") => cmd_update(&prog),
+        Some("uninstall") => cmd_uninstall(&prog),
         Some("-h") | Some("--help") | None => {
-            print_help();
+            print_help(&prog);
             0
         }
-        Some("-V") | Some("--version") => cmd_version(),
+        Some("-V") | Some("--version") => cmd_version(&prog),
         Some(other) => {
-            eprintln!("tbxa: unknown command '{other}'. See 'tbxa --help'.");
+            eprintln!("{prog}: unknown command '{other}'. See '{prog} --help'.");
             2
         }
     };
     std::process::exit(code);
 }
 
-fn print_help() {
-    println!("tbxa - terminal companion for ToolsBoXApp");
+/// Name under which the binary was invoked (`tbxa` by default, `tbxm` as alias).
+/// Both names behave identically; this only affects help/error messages.
+fn prog_name() -> String {
+    let argv0 = std::env::args().next().unwrap_or_default();
+    let base = argv0.rsplit('/').next().unwrap_or(&argv0);
+    if base == "tbxm" {
+        "tbxm".to_string()
+    } else {
+        "tbxa".to_string()
+    }
+}
+
+fn print_help(prog: &str) {
+    println!("{prog} - terminal companion for ToolsBoXApp");
     println!();
-    println!("Usage: tbxa <command>");
+    println!("Usage: {prog} <command>");
     println!();
     println!("Commands:");
-    println!("  update      Download the latest .rpm/.deb from GitHub releases and");
+    println!("  update      Download the latest .rpm/.deb/.pkg.tar.zst from GitHub releases");
     println!("              reinstall the app when it is newer");
     println!("  uninstall   Remove the ToolsBoXApp package");
     println!("  --version   Print the installed version");
     println!("  --help      Print this help");
+    println!();
+    println!("Alias: tbxa and tbxm are interchangeable.");
 }
 
 /// Runs a program and returns its trimmed stdout on success.
@@ -88,6 +106,7 @@ fn has_tool(name: &str) -> bool {
 enum PkgKind {
     Rpm,
     Deb,
+    Pacman,
 }
 
 impl PkgKind {
@@ -95,6 +114,7 @@ impl PkgKind {
         match self {
             PkgKind::Rpm => ".rpm",
             PkgKind::Deb => ".deb",
+            PkgKind::Pacman => ".pkg.tar.zst",
         }
     }
 }
@@ -102,7 +122,7 @@ impl PkgKind {
 /// Name of the installed package owning this executable via the RPM database,
 /// e.g. "tools-bo-x-app".
 fn installed_package_name_rpm() -> Result<String, String> {
-    let exe = std::env::current_exe().map_err(|error| format!("cannot locate tbxa: {error}"))?;
+    let exe = std::env::current_exe().map_err(|error| format!("cannot locate executable: {error}"))?;
     let name = run_capture(
         "rpm",
         &[
@@ -137,7 +157,7 @@ fn parse_dpkg_search_owner(output: &str) -> Option<String> {
 /// Name of the installed package owning this executable via the DPKG database
 /// (Debian/Ubuntu), e.g. "toolsboxapp".
 fn installed_package_name_deb() -> Result<String, String> {
-    let exe = std::env::current_exe().map_err(|error| format!("cannot locate tbxa: {error}"))?;
+    let exe = std::env::current_exe().map_err(|error| format!("cannot locate executable: {error}"))?;
     let output = run_capture("dpkg-query", &["--search", &exe.to_string_lossy()]).map_err(|_| {
         "tbxa does not seem to be installed through a DEB package.".to_string()
     })?;
@@ -145,7 +165,32 @@ fn installed_package_name_deb() -> Result<String, String> {
         .ok_or_else(|| "could not determine the installed package name.".to_string())
 }
 
-/// `(package_name, kind)`, trying RPM first then DPKG.
+/// Parses `pacman -Qo` output (`"/usr/bin/tbxa is owned by toolsboxapp 2026.10.16-1"`)
+/// into the package name.
+fn parse_pacman_query_owner(output: &str) -> Option<String> {
+    let line = output.lines().next()?.trim();
+    let marker = "is owned by";
+    let pos = line.find(marker)?;
+    let rest = line[pos + marker.len()..].trim();
+    let name = rest.split_whitespace().next()?.trim();
+    if name.is_empty() {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+/// Name of the installed package owning this executable via the pacman
+/// database (Arch Linux), e.g. "toolsboxapp".
+fn installed_package_name_pacman() -> Result<String, String> {
+    let exe = std::env::current_exe().map_err(|error| format!("cannot locate executable: {error}"))?;
+    let output = run_capture("pacman", &["-Qo", &exe.to_string_lossy()]).map_err(|_| {
+        "tbxa does not seem to be installed through a pacman package.".to_string()
+    })?;
+    parse_pacman_query_owner(&output)
+        .ok_or_else(|| "could not determine the installed package name.".to_string())
+}
+
+/// `(package_name, kind)`, trying RPM first, then DPKG, then pacman.
 fn installed_package() -> Result<(String, PkgKind), String> {
     if let Ok(name) = installed_package_name_rpm() {
         return Ok((name, PkgKind::Rpm));
@@ -153,12 +198,17 @@ fn installed_package() -> Result<(String, PkgKind), String> {
     if let Ok(name) = installed_package_name_deb() {
         return Ok((name, PkgKind::Deb));
     }
-    Err("tbxa does not seem to be installed through an RPM or DEB package.".to_string())
+    if let Ok(name) = installed_package_name_pacman() {
+        return Ok((name, PkgKind::Pacman));
+    }
+    Err("tbxa does not seem to be installed through an RPM, DEB or pacman package.".to_string())
 }
 
-/// Strips a Debian revision suffix (`"2026.10.10-1"` -> `"2026.10.10"`),
+/// Strips a packaging revision suffix (`"2026.10.10-1"` -> `"2026.10.10"`),
 /// matching the RPM `%{VERSION}` semantics used for comparisons.
-fn strip_debian_revision(version: &str) -> &str {
+/// Applies to Debian revisions and Arch `pkgrel` alike (neither version
+/// core contains a `-`).
+fn strip_release_suffix(version: &str) -> &str {
     match version.find('-') {
         Some(index) => &version[..index],
         None => version,
@@ -172,7 +222,17 @@ fn installed_version(package: &str, kind: PkgKind) -> Result<String, String> {
         PkgKind::Deb => {
             let full =
                 run_capture("dpkg-query", &["--show", "--showformat=${Version}", package])?;
-            let upstream = strip_debian_revision(full.trim()).to_string();
+            let upstream = strip_release_suffix(full.trim()).to_string();
+            if upstream.is_empty() {
+                return Err("could not determine the installed package version.".to_string());
+            }
+            Ok(upstream)
+        }
+        PkgKind::Pacman => {
+            // `pacman -Q` prints "<name> <pkgver>-<pkgrel>".
+            let out = run_capture("pacman", &["-Q", package])?;
+            let full = out.split_whitespace().nth(1).unwrap_or("").trim();
+            let upstream = strip_release_suffix(full).to_string();
             if upstream.is_empty() {
                 return Err("could not determine the installed package version.".to_string());
             }
@@ -383,7 +443,7 @@ fn json_asset_objects(doc: &str) -> Vec<&str> {
 }
 
 /// `(tag_name, package_download_url)` from a GitHub "latest release" response
-/// for the given asset extension (`".rpm"` or `".deb"`).
+/// for the given asset extension (`".rpm"`, `".deb"` or `".pkg.tar.zst"`).
 /// Prefers an asset with `x86_64`/`amd64` in its name.
 fn parse_latest_release_for(doc: &str, extension: &str) -> Result<(String, String), String> {
     let tag = json_string_value(doc, "tag_name")
@@ -426,7 +486,7 @@ fn parse_latest_release(doc: &str) -> Result<(String, String), String> {
 fn fetch_url(url: &str) -> Result<String, String> {
     if !has_tool("curl") {
         return Err(
-            "curl is required but not installed (sudo dnf install curl / sudo apt install curl)."
+            "curl is required but not installed (sudo dnf install curl / sudo apt install curl / sudo pacman -S curl)."
                 .to_string(),
         );
     }
@@ -449,7 +509,7 @@ fn fetch_url(url: &str) -> Result<String, String> {
 fn download_file(url: &str, dest: &std::path::Path) -> Result<(), String> {
     if !has_tool("curl") {
         return Err(
-            "curl is required but not installed (sudo dnf install curl / sudo apt install curl)."
+            "curl is required but not installed (sudo dnf install curl / sudo apt install curl / sudo pacman -S curl)."
                 .to_string(),
         );
     }
@@ -479,12 +539,13 @@ fn download_file(url: &str, dest: &std::path::Path) -> Result<(), String> {
 }
 
 /// Package manager used for installs, matching the native package format:
-/// `dnf` else `yum` for RPM, `apt-get` for DEB.
+/// `dnf` else `yum` for RPM, `apt-get` for DEB, `pacman` for Arch.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Manager {
     Dnf,
     Yum,
     AptGet,
+    Pacman,
 }
 
 impl Manager {
@@ -493,6 +554,7 @@ impl Manager {
             Manager::Dnf => "dnf",
             Manager::Yum => "yum",
             Manager::AptGet => "apt-get",
+            Manager::Pacman => "pacman",
         }
     }
 }
@@ -520,19 +582,23 @@ fn package_manager(kind: PkgKind) -> Result<Manager, String> {
                     .to_string())
             }
         }
+        PkgKind::Pacman => {
+            if has_tool("pacman") {
+                Ok(Manager::Pacman)
+            }
+            else {
+                Err("pacman was not found. This tool targets Arch Linux for .pkg.tar.zst packages."
+                    .to_string())
+            }
+        }
     }
 }
 
 /// Runs the package manager, with sudo unless already root.
+/// `operation` is "install" (target is a package file) or "remove"
+/// (target is a package name).
 fn run_package_manager(manager: Manager, operation: &str, target: &str) -> Result<(), String> {
     let program = manager.program();
-    // apt-get needs a distinct subcommand spelling (`install`/`remove`);
-    // dnf/yum use the same words passed in by the caller.
-    let operation = match (manager, operation) {
-        (Manager::AptGet, "install") => "install",
-        (Manager::AptGet, "remove") => "remove",
-        _ => operation,
-    };
     let mut command = if is_root() {
         Command::new(program)
     }
@@ -544,7 +610,19 @@ fn run_package_manager(manager: Manager, operation: &str, target: &str) -> Resul
         sudo.arg(program);
         sudo
     };
-    command.arg(operation).arg("-y").arg(target);
+    if manager == Manager::Pacman {
+        // pacman uses single-letter operations and --noconfirm instead of -y.
+        let flag = match operation {
+            "install" => "-U",
+            "remove" => "-R",
+            _ => operation,
+        };
+        command.arg(flag).arg("--noconfirm").arg(target);
+    }
+    else {
+        // dnf/yum and apt-get share the "install"/"remove -y <target>" spelling.
+        command.arg(operation).arg("-y").arg(target);
+    }
     let status = command.status().map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
             "package manager tool not found.".to_string()
@@ -562,31 +640,31 @@ fn run_package_manager(manager: Manager, operation: &str, target: &str) -> Resul
     Ok(())
 }
 
-fn cmd_version() -> i32 {
+fn cmd_version(prog: &str) -> i32 {
     match installed_package().and_then(|(package, kind)| installed_version(&package, kind)) {
         Ok(version) => {
-            println!("tbxa (ToolsBoXApp {version})");
+            println!("{prog} (ToolsBoXApp {version})");
             0
         }
         Err(error) => {
-            eprintln!("tbxa: {error}");
+            eprintln!("{prog}: {error}");
             1
         }
     }
 }
 
-fn cmd_update() -> i32 {
+fn cmd_update(prog: &str) -> i32 {
     let (package, kind) = match installed_package() {
         Ok(pair) => pair,
         Err(error) => {
-            eprintln!("tbxa update: {error}");
+            eprintln!("{prog} update: {error}");
             return 1;
         }
     };
     let current = match installed_version(&package, kind) {
         Ok(version) => version,
         Err(error) => {
-            eprintln!("tbxa update: {error}");
+            eprintln!("{prog} update: {error}");
             return 1;
         }
     };
@@ -597,14 +675,14 @@ fn cmd_update() -> i32 {
     let doc = match fetch_url(API_URL) {
         Ok(doc) => doc,
         Err(error) => {
-            eprintln!("tbxa update: {error}");
+            eprintln!("{prog} update: {error}");
             return 1;
         }
     };
     let (tag, url) = match parse_latest_release_for(&doc, kind.extension()) {
         Ok(pair) => pair,
         Err(error) => {
-            eprintln!("tbxa update: {error}");
+            eprintln!("{prog} update: {error}");
             return 1;
         }
     };
@@ -618,15 +696,15 @@ fn cmd_update() -> i32 {
     let manager = match package_manager(kind) {
         Ok(manager) => manager,
         Err(error) => {
-            eprintln!("tbxa update: {error}");
+            eprintln!("{prog} update: {error}");
             return 1;
         }
     };
 
-    let default_name = if kind == PkgKind::Deb {
-        "toolsboxapp-update.deb"
-    } else {
-        "toolsboxapp-update.rpm"
+    let default_name = match kind {
+        PkgKind::Deb => "toolsboxapp-update.deb",
+        PkgKind::Rpm => "toolsboxapp-update.rpm",
+        PkgKind::Pacman => "toolsboxapp-update.pkg.tar.zst",
     };
     let file_name = url.rsplit('/').next().unwrap_or(default_name);
     let dest = std::env::temp_dir().join(format!(
@@ -635,7 +713,7 @@ fn cmd_update() -> i32 {
     ));
     println!("Downloading {}...", dest.to_string_lossy());
     if let Err(error) = download_file(&url, &dest) {
-        eprintln!("tbxa update: {error}");
+        eprintln!("{prog} update: {error}");
         return 1;
     }
 
@@ -646,7 +724,7 @@ fn cmd_update() -> i32 {
     let result = run_package_manager(manager, "install", &dest.to_string_lossy());
     let _ = std::fs::remove_file(&dest);
     if let Err(error) = result {
-        eprintln!("tbxa update: {error}");
+        eprintln!("{prog} update: {error}");
         return 1;
     }
 
@@ -654,18 +732,18 @@ fn cmd_update() -> i32 {
     0
 }
 
-fn cmd_uninstall() -> i32 {
+fn cmd_uninstall(prog: &str) -> i32 {
     let (package, kind) = match installed_package() {
         Ok(pair) => pair,
         Err(error) => {
-            eprintln!("tbxa uninstall: {error}");
+            eprintln!("{prog} uninstall: {error}");
             return 1;
         }
     };
     let manager = match package_manager(kind) {
         Ok(manager) => manager,
         Err(error) => {
-            eprintln!("tbxa uninstall: {error}");
+            eprintln!("{prog} uninstall: {error}");
             return 1;
         }
     };
@@ -675,7 +753,7 @@ fn cmd_uninstall() -> i32 {
         manager.program()
     );
     if let Err(error) = run_package_manager(manager, "remove", &package) {
-        eprintln!("tbxa uninstall: {error}");
+        eprintln!("{prog} uninstall: {error}");
         return 1;
     }
 
@@ -784,10 +862,57 @@ mod tests {
     }
 
     #[test]
-    fn strips_debian_revision() {
-        assert_eq!(strip_debian_revision("2026.10.11-1"), "2026.10.11");
-        assert_eq!(strip_debian_revision("2026.10.11"), "2026.10.11");
-        assert!(is_newer("20261011", strip_debian_revision("2026.10.10-1")));
-        assert!(!is_newer("20261010", strip_debian_revision("2026.10.10-1")));
+    fn strips_release_suffix() {
+        assert_eq!(strip_release_suffix("2026.10.11-1"), "2026.10.11");
+        assert_eq!(strip_release_suffix("2026.10.11"), "2026.10.11");
+        assert!(is_newer("20261011", strip_release_suffix("2026.10.10-1")));
+        assert!(!is_newer("20261010", strip_release_suffix("2026.10.10-1")));
+    }
+
+    #[test]
+    fn parses_pacman_query_owner_output() {
+        assert_eq!(
+            parse_pacman_query_owner("/usr/bin/tbxa is owned by toolsboxapp 2026.10.16-1")
+                .as_deref(),
+            Some("toolsboxapp")
+        );
+        assert_eq!(
+            parse_pacman_query_owner("/usr/bin/tbxm is owned by toolsboxapp 2026.10.16-1").as_deref(),
+            Some("toolsboxapp")
+        );
+        assert_eq!(parse_pacman_query_owner(""), None);
+        assert_eq!(parse_pacman_query_owner("error: No package owns /usr/bin/tbxa"), None);
+    }
+
+    #[test]
+    fn parses_pacman_version_output() {
+        // `pacman -Q` prints "<name> <pkgver>-<pkgrel>".
+        let out = "toolsboxapp 2026.10.16-1";
+        let full = out.split_whitespace().nth(1).unwrap_or("").trim();
+        assert_eq!(strip_release_suffix(full), "2026.10.16");
+        assert!(is_newer("20261017", strip_release_suffix(full)));
+        assert!(!is_newer("20261016", strip_release_suffix(full)));
+    }
+
+    #[test]
+    fn pacman_asset_extension() {
+        assert_eq!(PkgKind::Pacman.extension(), ".pkg.tar.zst");
+        let doc = r#"{"tag_name": "20261016", "assets": [
+          {"name": "ToolsBoXApp-2026.10.16-1.x86_64.rpm", "browser_download_url": "https://example.com/app.rpm"},
+          {"name": "toolsboxapp_2026.10.16_amd64.deb", "browser_download_url": "https://example.com/app.deb"},
+          {"name": "toolsboxapp-2026.10.16-1-x86_64.pkg.tar.zst", "browser_download_url": "https://example.com/app.pkg.tar.zst"}
+        ]}"#;
+        let (tag, url) = parse_latest_release_for(doc, ".pkg.tar.zst").unwrap();
+        assert_eq!(tag, "20261016");
+        assert_eq!(url, "https://example.com/app.pkg.tar.zst");
+        // Other formats ignore the Arch asset and vice versa.
+        let (tag, url) = parse_latest_release_for(doc, ".rpm").unwrap();
+        assert_eq!(url, "https://example.com/app.rpm");
+        assert_eq!(tag, "20261016");
+        let arch_only = r#"{"tag_name": "20261016", "assets": [
+          {"name": "toolsboxapp-2026.10.16-1-x86_64.pkg.tar.zst", "browser_download_url": "https://example.com/app.pkg.tar.zst"}
+        ]}"#;
+        assert!(parse_latest_release_for(arch_only, ".rpm").is_err());
+        assert!(parse_latest_release_for(arch_only, ".deb").is_err());
     }
 }
