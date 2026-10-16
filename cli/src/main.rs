@@ -581,7 +581,7 @@ fn download_file(url: &str, dest: &std::path::Path) -> Result<(), String> {
     }
     let status = Command::new("curl")
         .args([
-            "-fSL",
+            "-fsSL",
             "--max-time",
             "600",
             "-o",
@@ -787,7 +787,7 @@ fn run_package_manager(manager: Manager, operation: &str, target: &str) -> Resul
         // dnf/yum and apt-get share the "install"/"remove -y <target>" spelling.
         command.arg(operation).arg("-y").arg(target);
     }
-    let status = command.status().map_err(|error| {
+    let output = command.output().map_err(|error| {
         if error.kind() == std::io::ErrorKind::NotFound {
             "package manager tool not found.".to_string()
         }
@@ -795,10 +795,17 @@ fn run_package_manager(manager: Manager, operation: &str, target: &str) -> Resul
             format!("cannot run package manager: {error}")
         }
     })?;
-    if !status.success() {
+    if !output.status.success() {
+        // Keep the display to the banner plus the progress bar: swallow the
+        // manager chatter, show only its tail on failure.
+        let mut log = String::from_utf8_lossy(&output.stdout).into_owned();
+        log.push_str(&String::from_utf8_lossy(&output.stderr));
+        let lines: Vec<&str> = log.lines().collect();
+        let start = lines.len().saturating_sub(20);
         return Err(format!(
-            "'{} {operation}' failed (see output above).",
-            manager.program()
+            "'{} {operation}' failed:\n{}",
+            manager.program(),
+            lines[start..].join("\n")
         ));
     }
     Ok(())
