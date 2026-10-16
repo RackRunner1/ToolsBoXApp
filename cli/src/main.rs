@@ -1,8 +1,7 @@
 //! tbxa (alias tbxm) - terminal companion for ToolsBoXApp.
 //!
 //! Commands:
-//!   tbxa update    - fetch the latest .rpm/.deb/.pkg.tar.zst from GitHub releases
-//!                    when it is newer than the installed version.
+//!   tbxa update    - install the latest .rpm/.deb/.pkg.tar.zst from GitHub releases.
 //!   tbxa uninstall - remove the ToolsBoXApp package.
 //!   tbxa --version - print the installed version.
 //!
@@ -58,7 +57,7 @@ fn print_help(prog: &str) {
     println!();
     println!("Commands:");
     println!("  update      Download the latest .rpm/.deb/.pkg.tar.zst from GitHub releases");
-    println!("              reinstall the app when it is newer");
+    println!("              and reinstall the app");
     println!("  uninstall   Remove the ToolsBoXApp package");
     println!("  --version   Print the installed version");
     println!("  --help      Print this help");
@@ -239,42 +238,6 @@ fn installed_version(package: &str, kind: PkgKind) -> Result<String, String> {
             Ok(upstream)
         }
     }
-}
-
-/// Normalizes a version into a comparable triplet of numbers.
-///
-/// - `20261010`    -> `[2026, 10, 10]` (YYYYMMDD tags)
-/// - `2026.10.10`  -> `[2026, 10, 10]` (RPM versions)
-/// - anything else -> the numbers found, in order
-fn version_tuple(version: &str) -> Vec<u64> {
-    let s = version.trim().trim_start_matches(['v', 'V']);
-
-    if s.len() == 8 && s.bytes().all(|b| b.is_ascii_digit()) {
-        let compact: u64 = s.parse().unwrap_or(0);
-        return vec![compact / 10_000, (compact / 100) % 100, compact % 100];
-    }
-
-    s.split(|c: char| c == '.' || c == '-' || c == '_' || c == '+' || c.is_whitespace())
-        .filter(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
-        .filter_map(|part| part.parse::<u64>().ok())
-        .collect()
-}
-
-/// `true` when `candidate` is strictly newer than `current`.
-fn is_newer(candidate: &str, current: &str) -> bool {
-    let candidate = version_tuple(candidate);
-    let current = version_tuple(current);
-
-    for index in 0..candidate.len().max(current.len()) {
-        let left = candidate.get(index).copied().unwrap_or(0);
-        let right = current.get(index).copied().unwrap_or(0);
-        match left.cmp(&right) {
-            std::cmp::Ordering::Greater => return true,
-            std::cmp::Ordering::Less => return false,
-            std::cmp::Ordering::Equal => {}
-        }
-    }
-    false
 }
 
 /// Decodes a JSON string literal starting just after the opening quote.
@@ -775,7 +738,7 @@ fn cmd_update(prog: &str) -> i32 {
     };
 
     println!("Installed version: {current}");
-    println!("Checking {REPO} for a newer release...");
+    println!("Checking {REPO} for the latest release...");
 
     let doc = match fetch_url(API_URL) {
         Ok(doc) => doc,
@@ -793,11 +756,9 @@ fn cmd_update(prog: &str) -> i32 {
     };
     println!("Latest release: {tag}");
 
-    if !is_newer(&tag, &current) {
-        println!("Already up to date.");
-        return 0;
-    }
-
+    // No version comparison here on purpose: release tags are free-form
+    // (they can be customized on manual runs), so `update` always installs
+    // the latest published package instead of guessing from tag names.
     let manager = match package_manager(kind) {
         Ok(manager) => manager,
         Err(error) => {
@@ -909,22 +870,6 @@ fn cmd_uninstall(prog: &str) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn compares_date_tags_and_rpm_versions() {
-        assert!(is_newer("20261011", "2026.10.10"));
-        assert!(!is_newer("20261010", "2026.10.10"));
-        assert!(!is_newer("20260930", "2026.9.30"));
-        assert!(is_newer("2026.10.9", "2026.9.30"));
-        assert!(!is_newer("1.0.0", "1.0.0"));
-    }
-
-    #[test]
-    fn parses_both_version_shapes() {
-        assert_eq!(version_tuple("20261010"), vec![2026, 10, 10]);
-        assert_eq!(version_tuple("v2026.10.10"), vec![2026, 10, 10]);
-        assert_eq!(version_tuple("2026.1.1"), vec![2026, 1, 1]);
-    }
 
     #[test]
     fn extracts_json_string_values() {
@@ -1056,8 +1001,7 @@ mod tests {
     fn strips_release_suffix() {
         assert_eq!(strip_release_suffix("2026.10.11-1"), "2026.10.11");
         assert_eq!(strip_release_suffix("2026.10.11"), "2026.10.11");
-        assert!(is_newer("20261011", strip_release_suffix("2026.10.10-1")));
-        assert!(!is_newer("20261010", strip_release_suffix("2026.10.10-1")));
+        assert_eq!(strip_release_suffix("2026.10.10-1"), "2026.10.10");
     }
 
     #[test]
@@ -1081,8 +1025,6 @@ mod tests {
         let out = "toolsboxapp 2026.10.16-1";
         let full = out.split_whitespace().nth(1).unwrap_or("").trim();
         assert_eq!(strip_release_suffix(full), "2026.10.16");
-        assert!(is_newer("20261017", strip_release_suffix(full)));
-        assert!(!is_newer("20261016", strip_release_suffix(full)));
     }
 
     #[test]
