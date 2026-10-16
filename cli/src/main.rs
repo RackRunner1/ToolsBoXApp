@@ -15,10 +15,76 @@
 //! `rpm`/`dpkg-query`/`pacman -Qo`, `curl`, `dnf`/`yum`, `apt-get` or
 //! `pacman -U`/`pacman -R`, `sudo` (only when not running as root).
 
+use std::io::{IsTerminal, Write};
 use std::process::Command;
 
-const REPO: &str = "RackRunner1/ToolsBoXApp";
 const API_URL: &str = "https://api.github.com/repos/RackRunner1/ToolsBoXApp/releases/latest";
+
+/// ToolsBoXApp ASCII banner, always preceded by two blank lines.
+const BANNER: &str = r"████████╗ ██████╗  ██████╗ ██╗     ███████╗██████╗  ██████╗ ██╗  ██╗ █████╗ ██████╗ ██████╗ 
+╚══██╔══╝██╔═══██╗██╔═══██╗██║     ██╔════╝██╔══██╗██╔═══██╗╚██╗██╔╝██╔══██╗██╔══██╗██╔══██╗
+   ██║   ██║   ██║██║   ██║██║     ███████╗██████╔╝██║   ██║ ╚███╔╝ ███████║██████╔╝██████╔╝
+   ██║   ██║   ██║██║   ██║██║     ╚════██║██╔══██╗██║   ██║ ██╔██╗ ██╔══██║██╔═══╝ ██╔═══╝ 
+   ██║   ╚██████╔╝╚██████╔╝███████╗███████║██████╔╝╚██████╔╝██╔╝ ██╗██║  ██║██║     ██║     
+   ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝╚══════╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝     ";
+
+/// Prints two blank lines, then the banner. Every operation starts with this.
+fn print_banner() {
+    println!();
+    println!();
+    println!("{BANNER}");
+}
+
+/// Single-line progress bar (`████████░░░░░░  42%`): redrawn in place on a
+/// terminal, printed as plain lines when stdout is piped.
+struct Progress {
+    tty: bool,
+}
+
+impl Progress {
+    fn new() -> Self {
+        Self {
+            tty: std::io::stdout().is_terminal(),
+        }
+    }
+
+    fn set(&self, pct: u8) {
+        if self.tty {
+            print!("\r{}", progress_line(pct));
+            std::io::stdout().flush().ok();
+        }
+        else {
+            println!("{}", progress_line(pct));
+        }
+    }
+
+    /// Removes the bar line, keeping only the banner and the final message.
+    fn finish(&self) {
+        if self.tty {
+            print!("\r{:width$}\r", "", width = 40);
+            std::io::stdout().flush().ok();
+        }
+    }
+}
+
+/// Renders one progress line; the pure (unit-tested) part of [`Progress::set`].
+fn progress_line(pct: u8) -> String {
+    const WIDTH: usize = 30;
+    let pct = pct.min(100);
+    let filled = pct as usize * WIDTH / 100;
+    format!(
+        "{}{} {pct:>3}%",
+        "█".repeat(filled),
+        "░".repeat(WIDTH - filled)
+    )
+}
+
+/// Clears the progress bar, prints an error, and returns a failure code.
+fn fail(bar: &Progress, message: String) -> i32 {
+    bar.finish();
+    eprintln!("{message}");
+    1
+}
 
 fn main() {
     let prog = prog_name();
@@ -725,23 +791,15 @@ fn cmd_version(prog: &str) -> i32 {
 }
 
 fn cmd_update(prog: &str) -> i32 {
-    let (package, kind) = match installed_package() {
-        Ok(pair) => pair,
-        Err(error) => {
-            eprintln!("{prog} update: {error}");
-            return 1;
-        }
-    };
-    let current = match installed_version(&package, kind) {
-        Ok(version) => version,
+    let kind = match installed_package() {
+        Ok((_, kind)) => kind,
         Err(error) => {
             eprintln!("{prog} update: {error}");
             return 1;
         }
     };
 
-    println!("Installed version: {current}");
-    println!("Checking {REPO} for the latest release...");
+    print_banner();
 
     let (doc, tag, url) = match fetch_latest(prog, "update", kind) {
         Ok(triple) => triple,
@@ -750,7 +808,6 @@ fn cmd_update(prog: &str) -> i32 {
             return 1;
         }
     };
-    println!("Latest release: {tag}");
 
     // No version comparison here on purpose: release tags are free-form
     // (they can be customized on manual runs), so `update` always installs
@@ -777,7 +834,7 @@ fn cmd_reinstall(prog: &str) -> i32 {
 
     // Like `update`: reinstall the latest published package (release tags
     // are free-form, so nothing is resolved from the installed version).
-    println!("Checking {REPO} for the latest release...");
+    print_banner();
 
     let (doc, tag, url) = match fetch_latest(prog, "reinstall", kind) {
         Ok(triple) => triple,
@@ -786,7 +843,6 @@ fn cmd_reinstall(prog: &str) -> i32 {
             return 1;
         }
     };
-    println!("Latest release: {tag}");
     install_release(prog, "reinstall", &doc, kind, &tag, &url)
 }
 
@@ -801,12 +857,10 @@ fn install_release(
     tag: &str,
     url: &str,
 ) -> i32 {
+    let bar = Progress::new();
     let manager = match package_manager(kind) {
         Ok(manager) => manager,
-        Err(error) => {
-            eprintln!("{prog} {op}: {error}");
-            return 1;
-        }
+        Err(error) => return fail(&bar, format!("{prog} {op}: {error}")),
     };
 
     let default_name = match kind {
@@ -819,21 +873,22 @@ fn install_release(
         "tbxa-{op}-{}-{file_name}",
         std::process::id()
     ));
-    println!("Downloading {}...", dest.to_string_lossy());
+    bar.set(10);
     if let Err(error) = download_file(url, &dest) {
-        eprintln!("{prog} {op}: {error}");
-        return 1;
+        return fail(&bar, format!("{prog} {op}: {error}"));
     }
+    bar.set(50);
 
     // HTTPS alone proves transport security, not artifact authenticity:
     // every release publishes checksums.txt, so refuse to install a
     // package that does not match its published SHA-256 hash.
-    println!("Verifying SHA-256 against checksums.txt...");
     let sums_url = match find_checksums_url(doc) {
         Some(url) => url,
         None => {
-            eprintln!("{prog} {op}: no checksums.txt asset in release {tag}; refusing an unverifiable package.");
-            return 1;
+            return fail(
+                &bar,
+                format!("{prog} {op}: no checksums.txt asset in release {tag}; refusing an unverifiable package."),
+            );
         }
     };
     let sums_dest = std::env::temp_dir().join(format!(
@@ -841,46 +896,42 @@ fn install_release(
         std::process::id()
     ));
     if let Err(error) = download_file(&sums_url, &sums_dest) {
-        eprintln!("{prog} {op}: {error}");
-        return 1;
+        return fail(&bar, format!("{prog} {op}: {error}"));
     }
+    bar.set(65);
     let sums = match std::fs::read_to_string(&sums_dest) {
         Ok(sums) => sums,
         Err(error) => {
-            eprintln!("{prog} {op}: cannot read checksums.txt: {error}");
-            return 1;
+            return fail(
+                &bar,
+                format!("{prog} {op}: cannot read checksums.txt: {error}"),
+            );
         }
     };
     let _ = std::fs::remove_file(&sums_dest);
     let actual = match sha256_of(&dest) {
         Ok(actual) => actual,
-        Err(error) => {
-            eprintln!("{prog} {op}: {error}");
-            return 1;
-        }
+        Err(error) => return fail(&bar, format!("{prog} {op}: {error}")),
     };
     if let Err(error) = check_sha256(&sums, file_name, &actual) {
-        eprintln!("{prog} {op}: {error}");
-        return 1;
+        return fail(&bar, format!("{prog} {op}: {error}"));
     }
-    println!("SHA-256 verified: {file_name} ({actual}).");
+    bar.set(75);
 
-    println!(
-        "Installing with {} (root privileges required)...",
-        manager.program()
-    );
+    bar.set(85);
     let result = run_package_manager(manager, "install", &dest.to_string_lossy());
     let _ = std::fs::remove_file(&dest);
     if let Err(error) = result {
-        eprintln!("{prog} {op}: {error}");
-        return 1;
+        return fail(&bar, format!("{prog} {op}: {error}"));
     }
+    bar.set(100);
 
+    bar.finish();
     if op == "update" {
-        println!("Update installed. Restart the app if it was running.");
+        println!("ToolsBoXApp have been updated on the latest version");
     }
     else {
-        println!("Reinstall finished. Restart the app if it was running.");
+        println!("ToolsBoXApp have been reinstalled on the latest version");
     }
     0
 }
@@ -901,22 +952,38 @@ fn cmd_uninstall(prog: &str) -> i32 {
         }
     };
 
-    println!(
-        "Removing package '{package}' with {} (root privileges required)...",
-        manager.program()
-    );
+    print_banner();
+    let bar = Progress::new();
+    bar.set(15);
     if let Err(error) = run_package_manager(manager, "remove", &package) {
-        eprintln!("{prog} uninstall: {error}");
-        return 1;
+        return fail(&bar, format!("{prog} uninstall: {error}"));
     }
+    bar.set(100);
 
-    println!("ToolsBoXApp uninstalled.");
+    bar.finish();
+    println!("ToolsBoXApp have been uninstalled");
     0
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn renders_progress_lines() {
+        assert!(BANNER.contains('█'));
+        let line = progress_line(0);
+        assert_eq!(line.chars().filter(|&c| c == '█').count(), 0);
+        assert!(line.ends_with("  0%"));
+        let line = progress_line(50);
+        assert_eq!(line.chars().filter(|&c| c == '█').count(), 15);
+        assert!(line.ends_with(" 50%"));
+        let line = progress_line(100);
+        assert_eq!(line.chars().filter(|&c| c == '█').count(), 30);
+        assert!(line.ends_with("100%"));
+        // Clamped above 100.
+        assert!(progress_line(250).ends_with("100%"));
+    }
 
     #[test]
     fn extracts_json_string_values() {
