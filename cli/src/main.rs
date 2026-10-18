@@ -4,7 +4,8 @@
 //!   tbxa update    - install the latest .rpm/.deb/.pkg.tar.zst from GitHub releases.
 //!   tbxa reinstall - force-reinstall the latest published package.
 //!   tbxa uninstall - remove the ToolsBoXApp package.
-//!   tbxa --version - print the installed version.
+//!   tbxa -v/--version - print the installed version.
+//!   tbxa -h/--help    - print the command list.
 //!
 //! `tbxm` is an alias: both names behave identically.
 //!
@@ -100,7 +101,9 @@ fn main() {
             print_help(&prog);
             0
         }
-        Some("-V") | Some("--version") => cmd_version(&prog),
+        // Short flags are the first letter of their long form: -v/-h.
+        // `-V` is kept as a compatibility alias.
+        Some("-v") | Some("-V") | Some("--version") => cmd_version(&prog),
         Some(other) => {
             eprintln!("{prog}: unknown command '{other}'. See '{prog} --help'.");
             2
@@ -127,12 +130,12 @@ fn print_help(prog: &str) {
     println!("Usage: {prog} <command>");
     println!();
     println!("Commands:");
-    println!("  update      Download the latest .rpm/.deb/.pkg.tar.zst from GitHub releases");
-    println!("              and reinstall the app");
-    println!("  reinstall   Force-reinstall the latest release");
-    println!("  uninstall   Remove the ToolsBoXApp package");
-    println!("  --version   Print the installed version");
-    println!("  --help      Print this help");
+    println!("  update         Download the latest .rpm/.deb/.pkg.tar.zst from GitHub releases");
+    println!("                 and reinstall the app");
+    println!("  reinstall      Force-reinstall the latest release");
+    println!("  uninstall      Remove the ToolsBoXApp package");
+    println!("  -v, --version  Print the installed version");
+    println!("  -h, --help     Print this help");
     println!();
     println!("Alias: tbxa and tbxm are interchangeable.");
 }
