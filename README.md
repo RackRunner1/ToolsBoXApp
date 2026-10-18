@@ -1,4 +1,7 @@
 # ToolsBoXApp
+A project by the ToolsBoXCompany.
+
+---
 
 <img width="1490" height="888" alt="image" src="https://github.com/user-attachments/assets/1d64c11e-c446-4454-87cf-04abb632b2b9" />
 
