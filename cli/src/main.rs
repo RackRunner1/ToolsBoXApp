@@ -1,7 +1,8 @@
 //! tbxa (alias tbxm) - terminal companion for ToolsBoXApp.
 //!
 //! Commands:
-//!   tbxa update    - install the latest .rpm/.deb/.pkg.tar.zst from GitHub releases.
+//!   tbxa update    - install the latest .rpm/.deb/.pkg.tar.zst from GitHub releases
+//!                    when it is newer than the installed version.
 //!   tbxa reinstall - force-reinstall the latest published package.
 //!   tbxa uninstall - remove the ToolsBoXApp package.
 //!   tbxa -v/--version - print the installed version.
@@ -131,7 +132,7 @@ fn print_help(prog: &str) {
     println!();
     println!("Commands:");
     println!("  update         Download the latest .rpm/.deb/.pkg.tar.zst from GitHub releases");
-    println!("                 and reinstall the app");
+    println!("                 and reinstall the app when it is newer");
     println!("  reinstall      Force-reinstall the latest release");
     println!("  uninstall      Remove the ToolsBoXApp package");
     println!("  -v, --version  Print the installed version");
@@ -287,6 +288,56 @@ fn strip_release_suffix(version: &str) -> &str {
         Some(index) => &version[..index],
         None => version,
     }
+}
+
+/// Date-based package version embedded in a release asset URL, e.g.
+/// `https://…/toolsboxapp-2026.10.19-1.x86_64.rpm` -> `"2026.10.19"`.
+///
+/// Release tags are free-form (they can be overridden on manual runs), but
+/// package file names always carry the version actually installed by the
+/// package manager.
+fn release_version(url: &str) -> Option<String> {
+    let file_name = url.rsplit('/').next()?;
+    file_name
+        .split(|c: char| c == '-' || c == '_')
+        .find(|part| part.starts_with(|c: char| c.is_ascii_digit()))
+        .map(str::to_string)
+}
+
+/// Normalizes a version into a comparable list of numbers.
+///
+/// - `20261010`    -> `[2026, 10, 10]` (YYYYMMDD tags)
+/// - `2026.10.10`  -> `[2026, 10, 10]` (package versions)
+/// - anything else -> the numbers found, in order
+fn version_tuple(version: &str) -> Vec<u64> {
+    let s = version.trim().trim_start_matches(['v', 'V']);
+
+    if s.len() == 8 && s.bytes().all(|b| b.is_ascii_digit()) {
+        let compact: u64 = s.parse().unwrap_or(0);
+        return vec![compact / 10_000, (compact / 100) % 100, compact % 100];
+    }
+
+    s.split(|c: char| c == '.' || c == '-' || c == '_' || c == '+' || c.is_whitespace())
+        .filter(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+        .filter_map(|part| part.parse::<u64>().ok())
+        .collect()
+}
+
+/// `true` when `candidate` is strictly newer than `current`.
+fn is_newer(candidate: &str, current: &str) -> bool {
+    let candidate = version_tuple(candidate);
+    let current = version_tuple(current);
+
+    for index in 0..candidate.len().max(current.len()) {
+        let left = candidate.get(index).copied().unwrap_or(0);
+        let right = current.get(index).copied().unwrap_or(0);
+        match left.cmp(&right) {
+            std::cmp::Ordering::Greater => return true,
+            std::cmp::Ordering::Less => return false,
+            std::cmp::Ordering::Equal => {}
+        }
+    }
+    false
 }
 
 /// Installed version of the package, e.g. "2026.10.10".
@@ -828,19 +879,13 @@ fn cmd_version(prog: &str) -> i32 {
 }
 
 fn cmd_update(prog: &str) -> i32 {
-    let kind = match installed_package() {
-        Ok((_, kind)) => kind,
+    let (package, kind) = match installed_package() {
+        Ok(pair) => pair,
         Err(error) => {
             eprintln!("{prog} update: {error}");
             return 1;
         }
     };
-    if let Err(error) = sudo_auth(prog, "update") {
-        eprintln!("{error}");
-        return 1;
-    }
-
-    print_banner();
 
     let (doc, tag, url) = match fetch_latest(prog, "update", kind) {
         Ok(triple) => triple,
@@ -850,9 +895,27 @@ fn cmd_update(prog: &str) -> i32 {
         }
     };
 
-    // No version comparison here on purpose: release tags are free-form
-    // (they can be customized on manual runs), so `update` always installs
-    // the latest published package instead of guessing from tag names.
+    // Release tags are free-form, so the version is read from the package
+    // asset name (packages are always versioned with the build date). When
+    // the installed version is already up to date there is nothing to do,
+    // so neither sudo nor the package manager is needed.
+    if let Some(latest) = release_version(&url) {
+        if let Ok(current) = installed_version(&package, kind) {
+            if !is_newer(&latest, &current) {
+                print_banner();
+                println!("You are already on the latest version of TBXA.");
+                return 0;
+            }
+        }
+    }
+
+    if let Err(error) = sudo_auth(prog, "update") {
+        eprintln!("{error}");
+        return 1;
+    }
+
+    print_banner();
+
     install_release(prog, "update", &doc, kind, &tag, &url)
 }
 
@@ -1054,6 +1117,40 @@ mod tests {
         {"name": "other-1.aarch64.rpm", "browser_download_url": "https://example.com/other.rpm"}
       ]
     }"#;
+
+    #[test]
+    fn reads_version_from_release_asset_names() {
+        assert_eq!(
+            release_version("https://example.com/toolsboxapp-2026.10.19-1.x86_64.rpm").as_deref(),
+            Some("2026.10.19")
+        );
+        assert_eq!(
+            release_version("https://example.com/toolsboxapp_2026.10.19_amd64.deb").as_deref(),
+            Some("2026.10.19")
+        );
+        assert_eq!(
+            release_version("https://example.com/toolsboxapp-2026.10.19-1-x86_64.pkg.tar.zst")
+                .as_deref(),
+            Some("2026.10.19")
+        );
+        assert_eq!(release_version("https://example.com/checksums.txt"), None);
+    }
+
+    #[test]
+    fn compares_date_tags_and_package_versions() {
+        assert!(is_newer("20261011", "2026.10.10"));
+        assert!(!is_newer("20261010", "2026.10.10"));
+        assert!(!is_newer("20260930", "2026.9.30"));
+        assert!(is_newer("2026.10.9", "2026.9.30"));
+        assert!(!is_newer("1.0.0", "1.0.0"));
+    }
+
+    #[test]
+    fn parses_both_version_shapes() {
+        assert_eq!(version_tuple("20261010"), vec![2026, 10, 10]);
+        assert_eq!(version_tuple("v2026.10.10"), vec![2026, 10, 10]);
+        assert_eq!(version_tuple("2026.1.1"), vec![2026, 1, 1]);
+    }
 
     #[test]
     fn parses_latest_release_prefers_x86_64() {
