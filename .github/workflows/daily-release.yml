@@ -14,9 +14,8 @@ name: Daily Build & Release
 # with the current upstream HEAD: when ToolsBoXMachine has not moved, the
 # `build` job is skipped entirely (no identical rebuild, no empty release).
 # Pass `force: true` on manual runs to rebuild anyway (e.g. after app-code
-# changes with no upstream movement). A forced manual run can also set
-# `custom_tag` and `release_name` to override the date-based tag and the
-# release title.
+# changes with no upstream movement). Manual runs can also set
+# `release_name` to override the release title (the tag stays date-based).
 
 on:
   schedule:
@@ -39,10 +38,6 @@ on:
         description: "Bypass the upstream-change check and build anyway"
         type: boolean
         default: false
-      custom_tag:
-        description: "Custom tag (only used together with force=true)"
-        type: string
-        default: ""
       release_name:
         description: "Custom release name (defaults to the tag)"
         type: string
@@ -101,16 +96,9 @@ jobs:
             DO_SYNC=true
             DO_RELEASE=true
           fi
-          # Forced manual run: allow overriding the tag and the release name.
-          # (The package version itself stays date-based.)
-          FORCE="${{ inputs.force }}"
-          CUSTOM_TAG="${{ inputs.custom_tag }}"
+          # Manual runs may override the release title; the tag itself stays
+          # date-based. (The package version also stays date-based.)
           RELEASE_NAME="${{ inputs.release_name }}"
-          if [ "$FORCE" = "true" ] && [ -n "$CUSTOM_TAG" ]; then
-            TAG="$CUSTOM_TAG"
-          elif [ -n "$CUSTOM_TAG" ]; then
-            echo "custom_tag is ignored without force=true."
-          fi
           [ -z "$RELEASE_NAME" ] && RELEASE_NAME="$TAG"
           {
             echo "version=$VERSION"
