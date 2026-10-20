@@ -14,8 +14,7 @@ name: Daily Build & Release
 # with the current upstream HEAD: when ToolsBoXMachine has not moved, the
 # `build` job is skipped entirely (no identical rebuild, no empty release).
 # Pass `force: true` on manual runs to rebuild anyway (e.g. after app-code
-# changes with no upstream movement). Manual runs can also set
-# `release_name` to override the release title (the tag stays date-based).
+# changes with no upstream movement).
 
 on:
   schedule:
@@ -38,10 +37,6 @@ on:
         description: "Bypass the upstream-change check and build anyway"
         type: boolean
         default: false
-      release_name:
-        description: "Custom release name (defaults to the tag)"
-        type: string
-        default: ""
 
 permissions:
   contents: write
@@ -66,7 +61,6 @@ jobs:
       last_sha: ${{ steps.changes.outputs.last_sha }}
       version: ${{ steps.vars.outputs.version }}
       tag: ${{ steps.vars.outputs.tag }}
-      release_name: ${{ steps.vars.outputs.name }}
       date: ${{ steps.vars.outputs.date }}
       branch: ${{ steps.vars.outputs.branch }}
       do_sync: ${{ steps.vars.outputs.do_sync }}
@@ -96,20 +90,15 @@ jobs:
             DO_SYNC=true
             DO_RELEASE=true
           fi
-          # Manual runs may override the release title; the tag itself stays
-          # date-based. (The package version also stays date-based.)
-          RELEASE_NAME="${{ inputs.release_name }}"
-          [ -z "$RELEASE_NAME" ] && RELEASE_NAME="$TAG"
           {
             echo "version=$VERSION"
             echo "tag=$TAG"
-            echo "name=$RELEASE_NAME"
             echo "date=$DATE"
             echo "branch=$BRANCH"
             echo "do_sync=$DO_SYNC"
             echo "do_release=$DO_RELEASE"
           } >> "$GITHUB_OUTPUT"
-          echo "Build $TAG ($RELEASE_NAME, version $VERSION) - sync=$DO_SYNC release=$DO_RELEASE branch=$BRANCH"
+          echo "Build $TAG (version $VERSION) - sync=$DO_SYNC release=$DO_RELEASE branch=$BRANCH"
 
       - name: Check for upstream changes since the latest release
         id: changes
@@ -325,7 +314,7 @@ jobs:
         id: notes
         env:
           TAG: ${{ needs.check.outputs.tag }}
-          NAME: ${{ needs.check.outputs.release_name }}
+          NAME: ${{ needs.check.outputs.tag }}
           LAST_TAG: ${{ needs.check.outputs.last_tag }}
           LAST_SHA: ${{ needs.check.outputs.last_sha }}
           SOURCE_REPO: ${{ env.TBX_SOURCE_REPO }}
@@ -470,12 +459,12 @@ jobs:
       # ---------------------------------------------------------------------
       # 7. Publish the release
       # ---------------------------------------------------------------------
-      - name: Publish the ${{ needs.check.outputs.release_name }} release
+      - name: Publish the ${{ needs.check.outputs.tag }} release
         if: needs.check.outputs.do_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check.outputs.tag }}
-          name: ${{ needs.check.outputs.release_name }}
+          name: ${{ needs.check.outputs.tag }}
           body: ${{ steps.notes.outputs.body }}
           make_latest: true
           generate_release_notes: false
