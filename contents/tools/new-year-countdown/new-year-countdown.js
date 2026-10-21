@@ -92,7 +92,6 @@
         "New Year was: <strong>" +
         formatTargetDate(state.yearStart, tz) +
         "</strong>";
-      elProgressLabel.textContent = "New Year progress";
     } else {
       elStatus.classList.remove("elapsed");
       elStatusText.textContent = "Time until New Year";
@@ -103,19 +102,22 @@
         "New Year: <strong>" +
         formatTargetDate(state.yearEnd, tz) +
         "</strong>";
-      elProgressLabel.textContent = "Year progress";
     }
 
-    var yearLen = state.yearEnd.getTime() - state.yearStart.getTime();
-    var yearDone = now.getTime() - state.yearStart.getTime();
-    var pct = Math.min(100, Math.max(0, (yearDone / yearLen) * 100));
+    // During the 48h that follow New Year the bar stays full: the milestone
+    // has just been reached. Once that window closes it drops to the real
+    // progress through the calendar year.
+    elProgressLabel.textContent =
+      state.mode === "elapsed" ? "New Year progress" : "Year progress";
+
+    var pct = 100;
+    if (state.mode === "countdown") {
+      var yearLen = state.yearEnd.getTime() - state.yearStart.getTime();
+      var yearDone = now.getTime() - state.yearStart.getTime();
+      pct = Math.min(100, Math.max(0, (yearDone / yearLen) * 100));
+    }
     elFill.style.width = pct.toFixed(3) + "%";
     elPct.textContent = pct.toFixed(2) + "%";
-
-    document.title =
-      d + "d " + pad(h) + ":" + pad(m) + ":" + pad(s) +
-      (state.mode === "elapsed" ? " since " : " until ") +
-      state.targetYear + " | TBXM";
   }
 
   render();
