@@ -17,8 +17,6 @@ name: Daily Build & Release
 # changes with no upstream movement).
 
 on:
-  schedule:
-    - cron: "0 0 * * *"
   workflow_dispatch:
     inputs:
       do_sync:
