@@ -39,7 +39,7 @@ SYNC_FILES="index.html style.css"
 # Never shipped in contents/ (web-only or repo-meta extras): purged after
 # the sync, including leftovers from previous syncs.
 EXCLUDE_DIRS="og .github scripts"
-EXCLUDE_FILES="sitemap.xml robots.txt llms.txt README.md LICENSE CONTRIBUTING.md .gitignore"
+EXCLUDE_FILES="sitemap.xml robots.txt llms.txt README.md LICENSE CONTRIBUTING.md .gitignore edition.txt"
 # Nested paths purged after the sync (supports globs). The info pages are
 # pointless inside the installed app (install page, about, philosophy,
 # privacy, terms), so the whole pages/ content is excluded.
