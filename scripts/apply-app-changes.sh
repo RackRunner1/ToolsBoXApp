@@ -3,6 +3,8 @@
 #   1. Hide the "App" button in the navbar.
 #   2. Remove the footer links (About, Philosophy, Privacy Policy,
 #      Terms of Service), keeping only the copyright line.
+#   3. Remove the edition label from the navbar ("... Edition", which
+#      describes ToolsBoXMachine).
 #
 # Runs against the staged web copy (app/web/), never against contents/
 # (which stays a pristine mirror of ToolsBoXMachine). Called automatically
@@ -93,6 +95,41 @@ else:
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(new)
     print("footer: footer links removed, copyright kept.")
+PYEOF
+
+# ---------------------------------------------------------------------------
+# 3. Remove the edition label from the navbar: the "... Edition" text next
+#    to the logo describes ToolsBoXMachine and has no meaning in the
+#    ToolsBoXApp binary.
+# ---------------------------------------------------------------------------
+WEB_DIR="$WEB_DIR" python3 - <<'PYEOF'
+import os
+import re
+
+path = os.path.join(os.environ["WEB_DIR"], "ui", "navbar.html")
+if not os.path.isfile(path):
+    print("(skipped) ui/navbar.html not found in the web copy.")
+    raise SystemExit(0)
+
+with open(path, encoding="utf-8") as f:
+    raw = f.read()
+
+# Remove the <a ... class="nav-edition" ...>...</a> element (any attrs/order).
+new = re.sub(
+    r'<a\b[^>]*class="nav-edition"[^>]*>.*?</a\s*>',
+    "",
+    raw,
+    flags=re.IGNORECASE | re.DOTALL,
+)
+# Collapse the blank line left behind.
+new = re.sub(r"\n[ \t]*\n([ \t]*</div>)", r"\n\1", new)
+
+if new == raw:
+    print("navbar: no edition label found, nothing to do.")
+else:
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(new)
+    print("navbar: edition label removed.")
 PYEOF
 
 echo "OK: app changes applied"
