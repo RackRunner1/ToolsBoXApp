@@ -475,3 +475,44 @@ jobs:
             artifacts/*.deb
             artifacts/*.pkg.tar.zst
             artifacts/checksums.txt
+
+      # ---------------------------------------------------------------------
+      # 8. Publish to Arch User Repository (AUR)
+      # ---------------------------------------------------------------------
+      - name: Publish to Arch User Repository (AUR)
+        if: needs.check.outputs.do_release == 'true'
+        env:
+          AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$AUR_KEY" ]; then
+            echo "AUR_SSH_PRIVATE_KEY is not configured in repository secrets. Skipping AUR update."
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          echo "$AUR_KEY" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan -t ed25519,rsa aur.archlinux.org >> ~/.ssh/known_hosts
+
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/aur
+
+          PKG_FILE="$(ls artifacts/*.pkg.tar.zst 2>/dev/null | head -n 1)"
+          ./scripts/update-aur.sh \
+            --version "${{ needs.check.outputs.version }}" \
+            --tag "${{ needs.check.outputs.tag }}" \
+            --pkg-path "$PKG_FILE" \
+            --push
+
+      # ---------------------------------------------------------------------
+      # 9. Publish to Flathub
+      # ---------------------------------------------------------------------
+      - name: Publish to Flathub
+        if: needs.check.outputs.do_release == 'true'
+        env:
+          FLATHUB_TOKEN: ${{ secrets.FLATHUB_GH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          ./scripts/update-flathub.sh \
+            --tag "${{ needs.check.outputs.tag }}" \
+            --commit "${{ github.sha }}" \
+            --token "$FLATHUB_TOKEN" \
+            --push || echo "Flathub update skipped or pending repository creation."

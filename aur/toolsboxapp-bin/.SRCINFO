@@ -1,0 +1,23 @@
+pkgbase = toolsboxapp-bin
+	pkgdesc = Desktop toolbox (ToolsBoXMachine content)
+	pkgver = 2026.10.23
+	pkgrel = 1
+	url = https://github.com/RackRunner1/ToolsBoXApp
+	arch = x86_64
+	license = Unlicense
+	depends = glibc
+	depends = gcc-libs
+	depends = gtk3
+	depends = libsoup3
+	depends = webkit2gtk-4.1
+	depends = curl
+	depends = hicolor-icon-theme
+	provides = toolsboxapp
+	conflicts = toolsboxapp
+	options = !debug
+	source_x86_64 = https://github.com/RackRunner1/ToolsBoXApp/releases/download/20261023/toolsboxapp-2026.10.23-1-x86_64.pkg.tar.zst
+	source_x86_64 = LICENSE::https://raw.githubusercontent.com/RackRunner1/ToolsBoXApp/main/LICENSE
+	sha256sums_x86_64 = da2cd449985a3d4aa8ec65cf63589d13a7eb9fa44421b8339074a73d6e449f87
+	sha256sums_x86_64 = 6b0382b16279f26ff69014300541967a356a666eb0b91b422f6862f6b7dad17e
+
+pkgname = toolsboxapp-bin

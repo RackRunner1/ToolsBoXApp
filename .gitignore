@@ -4,9 +4,7 @@
 /target/
 app/src-tauri/target/
 app/src-tauri/gen/
-app/src-tauri/Cargo.lock
 cli/target/
-cli/Cargo.lock
 
 # JS dependencies (Tauri CLI)
 node_modules/
@@ -25,6 +23,7 @@ app/src-tauri/fallback-logo.png
 # ---------------------------------------------------------------------------
 # Local artifacts / scratch files
 # ---------------------------------------------------------------------------
+.flatpak-builder/
 artifacts/
 *.log
 *.user

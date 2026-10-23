@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "toolsboxapp",
   "version": "2026.1.1",
-  "identifier": "com.rackrunner.toolsboxapp",
+  "identifier": "io.github.RackRunner1.ToolsBoXApp",
   "build": {
     "frontendDist": "../web",
     "removeUnusedCommands": false

@@ -63,6 +63,10 @@ dpkg-deb --fsys-tarfile "$DEB" | tar -x -C "$STAGING"
 [ -x "$STAGING/usr/bin/tbxa" ] || { echo "tbxa missing from the .deb payload." >&2; exit 1; }
 [ -x "$STAGING/usr/bin/tbxm" ] || { echo "tbxm missing from the .deb payload." >&2; exit 1; }
 
+# Install license in the standard Arch location
+mkdir -p "$STAGING/usr/share/licenses/$PKGNAME"
+cp "$REPO_ROOT/LICENSE" "$STAGING/usr/share/licenses/$PKGNAME/LICENSE"
+
 SIZE="$(du -sb "$STAGING/usr" | cut -f1)"
 BUILD_DATE="$(date +%s)"
 
@@ -75,7 +79,7 @@ builddate = $BUILD_DATE
 packager = ToolsBoXApp CI
 size = $SIZE
 arch = $ARCH
-license = custom:Unlicense
+license = Unlicense
 depend = curl
 depend = gtk3
 depend = libsoup3

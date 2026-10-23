@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=ToolsBoXApp
+Comment=Offline desktop utility toolbox
+Exec=io.github.RackRunner1.ToolsBoXApp
+Icon=io.github.RackRunner1.ToolsBoXApp
+Type=Application
+Terminal=false
+Categories=Utility;
+Keywords=ToolsBoXMachine;tbxm;tbxa;ToolsBoXApp;tb;notes;emoji;clock;tools;
+StartupWMClass=io.github.RackRunner1.ToolsBoXApp

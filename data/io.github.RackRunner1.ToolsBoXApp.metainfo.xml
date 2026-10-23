@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.RackRunner1.ToolsBoXApp</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Unlicense</project_license>
+  <name>ToolsBoXApp</name>
+  <summary>Offline desktop utility toolbox</summary>
+  <description>
+    <p>
+      ToolsBoXApp brings the ToolsBoXMachine collection of everyday utilities
+      directly to your desktop as a standalone, native application.
+    </p>
+    <p>
+      All tools run locally on your system, allowing you to use them without an
+      active internet connection:
+    </p>
+    <ul>
+      <li>Text utilities, notes, and emoji keyboard</li>
+      <li>Calculators, countdowns, and timers</li>
+      <li>QR code generators and password generators</li>
+      <li>Image manipulation tools and more</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.RackRunner1.ToolsBoXApp.desktop</launchable>
+  <url type="homepage">https://github.com/RackRunner1/ToolsBoXApp</url>
+  <url type="bugtracker">https://github.com/RackRunner1/ToolsBoXApp/issues</url>
+  <url type="vcs-browser">https://github.com/RackRunner1/ToolsBoXApp</url>
+  <developer id="io.github.rackrunner1">
+    <name>RackRunner</name>
+  </developer>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/RackRunner1/ToolsBoXApp/main/data/screenshots/main.png</image>
+      <caption xml:lang="en">ToolsBoXApp main screen showing the collection of tools</caption>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="2026.1.1" date="2026-10-23" />
+  </releases>
+  <content_rating type="oars-1.1" />
+  <branding>
+    <color type="primary" scheme_preference="light">#2563eb</color>
+    <color type="primary" scheme_preference="dark">#1d4ed8</color>
+  </branding>
+</component>

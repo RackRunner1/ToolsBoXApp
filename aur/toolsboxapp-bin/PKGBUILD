@@ -1,0 +1,23 @@
+# Maintainer: RackRunner1 <https://github.com/RackRunner1>
+pkgname=toolsboxapp-bin
+pkgver=2026.10.23
+pkgrel=1
+pkgdesc="Desktop toolbox (ToolsBoXMachine content)"
+arch=('x86_64')
+url="https://github.com/RackRunner1/ToolsBoXApp"
+license=('Unlicense')
+depends=('glibc' 'gcc-libs' 'gtk3' 'libsoup3' 'webkit2gtk-4.1' 'curl' 'hicolor-icon-theme')
+provides=('toolsboxapp')
+conflicts=('toolsboxapp')
+options=('!debug')
+
+_tag="20261023"
+source_x86_64=("https://github.com/RackRunner1/ToolsBoXApp/releases/download/${_tag}/toolsboxapp-${pkgver}-${pkgrel}-${CARCH}.pkg.tar.zst"
+               "LICENSE::https://raw.githubusercontent.com/RackRunner1/ToolsBoXApp/main/LICENSE")
+sha256sums_x86_64=('da2cd449985a3d4aa8ec65cf63589d13a7eb9fa44421b8339074a73d6e449f87'
+                  '6b0382b16279f26ff69014300541967a356a666eb0b91b422f6862f6b7dad17e')
+
+package() {
+    cp -dr --no-preserve=ownership "${srcdir}/usr" "${pkgdir}/"
+    install -Dm644 "${srcdir}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
