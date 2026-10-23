@@ -29,14 +29,28 @@ body {
     -apple-system,
     sans-serif;
   background-color: var(--bg-color);
-  background-image:
-    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.05) 0px, transparent 50%),
-    radial-gradient(at 100% 0%, rgba(167, 139, 250, 0.05) 0px, transparent 50%);
   color: var(--text-color);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
+}
+
+/* Decorative top orbs. Painted on a fixed-height layer anchored to the
+   document's top so their radius never depends on the document height
+   (on the body itself they would stretch across every long page). */
+body::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  background-image:
+    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.05) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(167, 139, 250, 0.05) 0px, transparent 50%);
+  pointer-events: none;
+  z-index: -1;
 }
 
 h1 {
@@ -77,13 +91,27 @@ h1 {
 .nav-brand {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.4rem;
   justify-self: start;
 }
 
 .nav-logo {
   height: 32px;
   width: auto;
+}
+
+.nav-edition {
+  color: #64748b; /* gray, same tone as the search icon */
+  font-size: 0.65rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.nav-edition:hover {
+  color: #94a3b8;
 }
 
 .nav-links {
@@ -502,6 +530,7 @@ h1 {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  text-align: center;
   gap: 0.75rem;
   border: 2px dashed var(--card-border);
   border-radius: 1rem;
@@ -837,6 +866,20 @@ input[type="range"] {
   backdrop-filter: blur(12px);
 }
 
+/* In-content text links (philosophy, app, privacy…): use the heading
+   blue instead of the browser default, and keep the same color after
+   being visited so links never flip to purple. */
+.legal-card a:not(.btn),
+.legal-card a:not(.btn):visited {
+  color: #60a5fa;
+  text-decoration-color: rgba(96, 165, 250, 0.45);
+}
+
+.legal-card a:not(.btn):hover {
+  color: #93c5fd;
+  text-decoration-color: #93c5fd;
+}
+
 /* ===========================
    RESPONSIVE: Tablet
    =========================== */
@@ -1076,6 +1119,15 @@ input[type="range"] {
 
   .nav-logo {
     height: 26px;
+  }
+
+  .nav-edition {
+    font-size: 0.6rem;
+    letter-spacing: 0.01em;
+  }
+
+  .nav-brand {
+    gap: 0.25rem;
   }
 
   .search-input-wrapper input {
