@@ -79,6 +79,13 @@
         .note-content-input {
           padding: 1rem;
           font-size: 0.9rem;
+          padding-bottom: 7rem;
+        }
+        .editor-status {
+          bottom: 0.55rem;
+          right: 0.35rem;
+          padding: 0.3rem 0.7rem;
+          font-size: 0.7rem;
         }
       }
 
@@ -93,6 +100,7 @@
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
         width: 100%;
         min-width: 0;
+        position: relative;
       }
 
       .notes-main-header {
@@ -166,10 +174,33 @@
         resize: none;
         font-family: inherit;
         overflow-y: auto;
+        /* Permanent fictional space below content: lets the last line rise above the pill */
+        padding-bottom: 15rem;
       }
 
       .note-content-input::placeholder {
         color: #475569;
+      }
+
+      /* Floating word count pill */
+      .editor-status {
+        position: absolute;
+        bottom: 0.7rem;
+        right: 0.75rem;
+        z-index: 5;
+        display: inline-flex;
+        align-items: center;
+        padding: 0.4rem 0.95rem;
+        font-size: 0.78rem;
+        font-weight: 500;
+        color: #94a3b8;
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 999px;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+        user-select: none;
+        pointer-events: none;
+        white-space: nowrap;
       }
 
       .editor-empty {
@@ -910,6 +941,9 @@
             placeholder="Start writing..."
           ></textarea>
         </div>
+
+        <!-- Floating word count pill (anchored to the notes-main card) -->
+        <div class="editor-status" id="editor-status"></div>
       </div>
 
     </div>
@@ -943,6 +977,16 @@
             </div>
             <label class="toggle-switch">
               <input type="checkbox" id="setting-skip-delete-confirm" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="setting-card" style="margin-top: 0.75rem;">
+            <div class="setting-card-info">
+              <div class="setting-card-title">Show word count</div>
+              <div class="setting-card-desc">Display word, character and reading time stats below the editor</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="setting-show-word-count" />
               <span class="toggle-slider"></span>
             </label>
           </div>
