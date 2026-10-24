@@ -23,7 +23,6 @@ app/src-tauri/fallback-logo.png
 # ---------------------------------------------------------------------------
 # Local artifacts / scratch files
 # ---------------------------------------------------------------------------
-.flatpak-builder/
 artifacts/
 *.log
 *.user

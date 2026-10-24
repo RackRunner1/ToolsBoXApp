@@ -20,7 +20,6 @@ up to date.
 - ✅ Debian, Ubuntu and derivatives (`.deb` package)
 - ✅ Fedora, Red Hat and derivatives (`.rpm` package)
 - ✅ Arch Linux and derivatives (`.pkg.tar.zst` package & AUR `toolsboxapp-bin`)
-- ✅ Universal Linux via Flatpak (Flathub `io.github.RackRunner1.ToolsBoXApp`)
 
 ## Installation
 
@@ -34,14 +33,7 @@ curl -fsSL https://tbxm.org/install.sh | bash
 
 The script detects your distribution and installs the right package for you.
 
-### Option 2: Flatpak (Flathub)
-
-```sh
-flatpak install flathub io.github.RackRunner1.ToolsBoXApp
-flatpak run io.github.RackRunner1.ToolsBoXApp
-```
-
-### Option 3: Arch Linux (AUR)
+### Option 2: Arch Linux (AUR)
 
 ```sh
 yay -S toolsboxapp-bin
