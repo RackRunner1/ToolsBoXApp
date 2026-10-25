@@ -826,6 +826,10 @@ input[type="range"] {
   padding: 0 2rem;
   line-height: 1.6;
   flex: 1;
+  /* Flex item of body: allow shrinking below its content's min-width so
+     wide children (nowrap code blocks…) clamp to the viewport instead of
+     pushing the whole card wider than the screen on mobile. */
+  min-width: 0;
 }
 
 .content-container h1 {
@@ -868,6 +872,7 @@ input[type="range"] {
 .legal-card a:not(.btn):visited {
   color: #60a5fa;
   text-decoration-color: rgba(96, 165, 250, 0.45);
+  overflow-wrap: break-word;
 }
 
 .legal-card a:not(.btn):hover {
@@ -939,6 +944,11 @@ input[type="range"] {
   }
 
   .nav-links {
+    display: none;
+  }
+
+  /* Edition label is desktop-only to save space on phones. */
+  .nav-edition {
     display: none;
   }
 
@@ -1114,11 +1124,6 @@ input[type="range"] {
 
   .nav-logo {
     height: 26px;
-  }
-
-  .nav-edition {
-    font-size: 0.6rem;
-    letter-spacing: 0.01em;
   }
 
   .nav-brand {
