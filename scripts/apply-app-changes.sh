@@ -5,6 +5,7 @@
 #      Terms of Service), keeping only the copyright line.
 #   3. Remove the edition label from the navbar ("... Edition", which
 #      describes ToolsBoXMachine).
+#   4. Remove the homepage maintenance banner (website-only notice).
 #
 # Runs against the staged web copy (app/web/), never against contents/
 # (which stays a pristine mirror of ToolsBoXMachine). Called automatically
@@ -130,6 +131,37 @@ else:
     with open(path, "w", encoding="utf-8", newline="") as f:
         f.write(new)
     print("navbar: edition label removed.")
+PYEOF
+
+# ---------------------------------------------------------------------------
+# 4. Remove the homepage maintenance banner: it is a website-only notice
+#    about the server migration, irrelevant inside the installed app.
+# ---------------------------------------------------------------------------
+WEB_DIR="$WEB_DIR" python3 - <<'PYEOF'
+import os
+import re
+
+path = os.path.join(os.environ["WEB_DIR"], "index.html")
+if not os.path.isfile(path):
+    print("(skipped) index.html not found in the web copy.")
+    raise SystemExit(0)
+
+with open(path, encoding="utf-8") as f:
+    raw = f.read()
+
+new = re.sub(
+    r'[ \t]*<div\b[^>]*class="maintenance-banner"[^>]*>.*?</div\s*>\n?',
+    "",
+    raw,
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+if new == raw:
+    print("index: no maintenance banner found, nothing to do.")
+else:
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(new)
+    print("index: maintenance banner removed.")
 PYEOF
 
 echo "OK: app changes applied"
