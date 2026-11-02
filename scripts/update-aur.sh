@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Updates the AUR PKGBUILD and .SRCINFO for toolsboxapp-bin.
-#
-# Usage:
-#   ./scripts/update-aur.sh [--version X.Y.Z] [--tag YYYYMMDD] [--pkg-path PATH] [--push]
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -29,18 +25,15 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# If version is not provided, fetch the latest GitHub release
 if [ -z "$VERSION" ] || [ -z "$TAG" ]; then
   LATEST_JSON="$(curl -fsSL https://api.github.com/repos/RackRunner1/ToolsBoXApp/releases/latest)"
   TAG="$(echo "$LATEST_JSON" | grep -m1 '"tag_name":' | cut -d '"' -f 4)"
-  # Extract version from pkg filename
   PKG_NAME="$(echo "$LATEST_JSON" | grep -o 'toolsboxapp-[0-9.]\+-[0-9]\+-x86_64\.pkg\.tar\.zst' | head -n1)"
   VERSION="$(echo "$PKG_NAME" | sed -E 's/toolsboxapp-([0-9.]+)-[0-9]+-x86_64\.pkg\.tar\.zst/\1/')"
 fi
 
 echo "Updating AUR package toolsboxapp-bin to version $VERSION (tag $TAG)..."
 
-# Download or calculate SHA256 of the release pkg.tar.zst
 if [ -n "$PKG_PATH" ] && [ -f "$PKG_PATH" ]; then
   TAR_SHA256="$(sha256sum "$PKG_PATH" | cut -d' ' -f1)"
 else
@@ -54,7 +47,6 @@ LICENSE_SHA256="$(sha256sum "$REPO_ROOT/LICENSE" | cut -d' ' -f1)"
 [ -n "$TAR_SHA256" ] || { echo "Could not determine SHA256 for pkg.tar.zst" >&2; exit 1; }
 [ -n "$LICENSE_SHA256" ] || { echo "Could not determine SHA256 for LICENSE" >&2; exit 1; }
 
-# Update PKGBUILD
 cat > "$PKGBUILD" <<EOF
 # Maintainer: RackRunner1 <https://github.com/RackRunner1>
 pkgname=toolsboxapp-bin
@@ -81,7 +73,6 @@ package() {
 }
 EOF
 
-# Update .SRCINFO
 cat > "$SRCINFO" <<EOF
 pkgbase = toolsboxapp-bin
 	pkgdesc = Desktop toolbox (ToolsBoXMachine content)

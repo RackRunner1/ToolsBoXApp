@@ -1,19 +1,4 @@
 #!/usr/bin/env bash
-# Applies the forced app-only changes to the staged web copy:
-#   1. Hide the "App" button in the navbar.
-#   2. Remove the footer links (About, Philosophy, Privacy Policy,
-#      Terms of Service), keeping only the copyright line.
-#   3. Remove the edition label from the navbar ("... Edition", which
-#      describes ToolsBoXMachine).
-#   4. Remove the homepage maintenance banner (website-only notice).
-#
-# Runs against the staged web copy (app/web/), never against contents/
-# (which stays a pristine mirror of ToolsBoXMachine). Called automatically
-# at the end of scripts/prepare-web.sh, before `tauri build`.
-# Idempotent: running it twice gives the same result.
-#
-# Usage:
-#   ./scripts/apply-app-changes.sh [--web-dir DIR]
 set -euo pipefail
 
 WEB_DIR=""
@@ -31,11 +16,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [ -d "$WEB_DIR" ] || { echo "Web dir is missing: '$WEB_DIR' - run first: ./scripts/prepare-web.sh" >&2; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "python3 is required to apply app changes." >&2; exit 1; }
 
-# ---------------------------------------------------------------------------
-# 1. Hide the "App" button in the navbar: inside the installed app, a button
-#    advertising the app itself (installation instructions for a product the
-#    user already runs) makes no sense. The pages/app.html page is kept.
-# ---------------------------------------------------------------------------
 WEB_DIR="$WEB_DIR" python3 - <<'PYEOF'
 import os
 import re
@@ -48,14 +28,12 @@ if not os.path.isfile(path):
 with open(path, encoding="utf-8") as f:
     raw = f.read()
 
-# Remove the <a ... href="/pages/app.html" ...>...</a> element (any attrs/order).
 new = re.sub(
     r'<a\b[^>]*href="/pages/app\.html"[^>]*>.*?</a\s*>',
     "",
     raw,
     flags=re.IGNORECASE | re.DOTALL,
 )
-# Collapse the blank line left behind.
 new = re.sub(r"\n[ \t]*\n([ \t]*</div>)", r"\n\1", new)
 
 if new == raw:
@@ -66,10 +44,6 @@ else:
     print("navbar: App link removed.")
 PYEOF
 
-# ---------------------------------------------------------------------------
-# 2. Remove the footer links, keeping only the copyright line (left-aligned,
-#    like the default desktop footer layout).
-# ---------------------------------------------------------------------------
 WEB_DIR="$WEB_DIR" python3 - <<'PYEOF'
 import os
 import re
@@ -98,11 +72,6 @@ else:
     print("footer: footer links removed, copyright kept.")
 PYEOF
 
-# ---------------------------------------------------------------------------
-# 3. Remove the edition label from the navbar: the "... Edition" text next
-#    to the logo describes ToolsBoXMachine and has no meaning in the
-#    ToolsBoXApp binary.
-# ---------------------------------------------------------------------------
 WEB_DIR="$WEB_DIR" python3 - <<'PYEOF'
 import os
 import re
@@ -115,14 +84,12 @@ if not os.path.isfile(path):
 with open(path, encoding="utf-8") as f:
     raw = f.read()
 
-# Remove the <a ... class="nav-edition" ...>...</a> element (any attrs/order).
 new = re.sub(
     r'<a\b[^>]*class="nav-edition"[^>]*>.*?</a\s*>',
     "",
     raw,
     flags=re.IGNORECASE | re.DOTALL,
 )
-# Collapse the blank line left behind.
 new = re.sub(r"\n[ \t]*\n([ \t]*</div>)", r"\n\1", new)
 
 if new == raw:
@@ -133,10 +100,6 @@ else:
     print("navbar: edition label removed.")
 PYEOF
 
-# ---------------------------------------------------------------------------
-# 4. Remove the homepage maintenance banner: it is a website-only notice
-#    about the server migration, irrelevant inside the installed app.
-# ---------------------------------------------------------------------------
 WEB_DIR="$WEB_DIR" python3 - <<'PYEOF'
 import os
 import re

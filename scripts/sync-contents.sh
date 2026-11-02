@@ -1,17 +1,4 @@
 #!/usr/bin/env bash
-# Syncs the contents/ folder from ToolsBoXMachine.
-#
-# Fetches the source repository content (shallow clone, or a local clone
-# through --source-path) then mirrors the known folders/files into contents/
-# (files deleted upstream are removed locally).
-# Web-only extras (SEO/crawler files, OG images, repo meta files) are purged
-# after the sync so they never ship in the desktop app.
-# Writes contents/.sync-info.json (source SHA + timestamp, only rewritten
-# when the source changed, to avoid a daily commit with no changes).
-#
-# Usage:
-#   ./scripts/sync-contents.sh [--source-repo URL] [--branch BRANCH]
-#                              [--dest DIR] [--source-path DIR]
 set -euo pipefail
 
 SOURCE_REPO="https://github.com/RackRunner1/ToolsBoXMachine.git"
@@ -32,24 +19,31 @@ done
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [ -z "$DEST" ] && DEST="$REPO_ROOT/contents"
 
-# Folders synced as mirrors
-SYNC_DIRS=".assets pages public tools ui"
-# Files synced at the root
-SYNC_FILES="index.html style.css"
-# Never shipped in contents/ (web-only or repo-meta extras): purged after
-# the sync, including leftovers from previous syncs.
-EXCLUDE_DIRS="og .github scripts"
-EXCLUDE_FILES="sitemap.xml robots.txt llms.txt README.md LICENSE CONTRIBUTING.md .gitignore edition.txt"
-# Nested paths purged after the sync (supports globs). The info pages are
-# pointless inside the installed app (install page, about, philosophy,
-# privacy, terms), so the whole pages/ content is excluded.
-EXCLUDE_PATHS="pages/*.html"
+SYNC_DIRS=(.assets public tools ui)
+SYNC_FILES=(index.html style.css)
+EXCLUDE_DIRS=(og .github scripts pages)
+EXCLUDE_FILES=(sitemap.xml robots.txt llms.txt README.md LICENSE CONTRIBUTING.md .gitignore edition.txt '**/apple-touch-icon.png')
+
+exclude_files() {
+  local pattern file
+  for pattern in "$@"; do
+    if [[ "$pattern" == '**/'* ]]; then
+      while IFS= read -r -d '' file; do
+        rm -f "$file"
+        echo "  (excluded) ${file#"$DEST"/}"
+      done < <(find "$DEST" -type f -name "${pattern##*/}" -print0)
+      continue
+    fi
+    for file in "$DEST"/$pattern; do
+      [ -e "$file" ] || continue
+      rm -rf "$file"
+      echo "  (excluded) ${file#"$DEST"/}"
+    done
+  done
+}
 
 mkdir -p "$DEST"
 
-# ---------------------------------------------------------------------------
-# 1. Get the source
-# ---------------------------------------------------------------------------
 TMP=""
 if [ -n "$SOURCE_PATH" ]; then
   [ -f "$SOURCE_PATH/index.html" ] || { echo "Invalid --source-path: index.html is missing from '$SOURCE_PATH'." >&2; exit 1; }
@@ -67,9 +61,6 @@ fi
 cleanup() { [ -n "$TMP" ] && rm -rf "$TMP"; return 0; }
 trap cleanup EXIT
 
-# ---------------------------------------------------------------------------
-# 2. Source SHA
-# ---------------------------------------------------------------------------
 SHA="unknown"
 if [ -d "$SRC/.git" ]; then
   SHA="$(git -C "$SRC" rev-parse HEAD 2>/dev/null | tr -d '[:space:]')" || SHA="unknown"
@@ -77,10 +68,7 @@ if [ -d "$SRC/.git" ]; then
 fi
 echo "Source commit: $SHA"
 
-# ---------------------------------------------------------------------------
-# 3. Mirror the folders
-# ---------------------------------------------------------------------------
-for d in $SYNC_DIRS; do
+for d in "${SYNC_DIRS[@]}"; do
   if [ ! -d "$SRC/$d" ]; then
     echo "  (folder missing from source, skipped) $d"
     continue
@@ -89,10 +77,7 @@ for d in $SYNC_DIRS; do
   rsync -a --delete --exclude='.gitkeep' "$SRC/$d/" "$DEST/$d/"
 done
 
-# ---------------------------------------------------------------------------
-# 4. Root files
-# ---------------------------------------------------------------------------
-for f in $SYNC_FILES; do
+for f in "${SYNC_FILES[@]}"; do
   if [ -f "$SRC/$f" ]; then
     cp -f "$SRC/$f" "$DEST/$f"
   else
@@ -100,32 +85,14 @@ for f in $SYNC_FILES; do
   fi
 done
 
-# ---------------------------------------------------------------------------
-# 5. Purge web-only extras (SEO/crawler files, OG images, repo meta)
-# ---------------------------------------------------------------------------
-for d in $EXCLUDE_DIRS; do
+for d in "${EXCLUDE_DIRS[@]}"; do
   if [ -e "$DEST/$d" ]; then
     rm -rf "$DEST/$d"
     echo "  (excluded) $d"
   fi
 done
-for f in $EXCLUDE_FILES; do
-  if [ -e "$DEST/$f" ]; then
-    rm -f "$DEST/$f"
-    echo "  (excluded) $f"
-  fi
-done
-for p in $EXCLUDE_PATHS; do
-  for f in "$DEST"/$p; do
-    [ -e "$f" ] || continue
-    rm -rf "$f"
-    echo "  (excluded) ${f#"$DEST"/}"
-  done
-done
+exclude_files "${EXCLUDE_FILES[@]}"
 
-# ---------------------------------------------------------------------------
-# 6. Sync metadata (idempotent)
-# ---------------------------------------------------------------------------
 INFO_PATH="$DEST/.sync-info.json"
 UNCHANGED=0
 if [ -f "$INFO_PATH" ]; then

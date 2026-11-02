@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# Builds the Arch Linux pacman package (.pkg.tar.zst) from the .deb payload.
-#
-# The Tauri bundler only produces .deb and .rpm, so the Arch package reuses
-# the exact file tree shipped in the .deb (app binary, tbxa/tbxm, desktop
-# file, icons) and wraps it in the pacman format (.PKGINFO + zstd tarball).
-# The Tauri binary is the same across formats; only the packaging differs.
-#
-# Usage:
-#   ./scripts/build-arch-pkg.sh <version> [--deb PATH] [--out-dir DIR] [--pkgrel N]
 set -euo pipefail
 
 VERSION=""
@@ -57,13 +48,11 @@ PKGFILE="${PKGNAME}-${VERSION}-${PKGREL}-${ARCH}.pkg.tar.zst"
 STAGING="$(mktemp -d "${TMPDIR:-/tmp}/arch-pkg-XXXXXX")"
 trap 'rm -rf "$STAGING"' EXIT
 
-# Same files as the .deb: app binary, tbxa/tbxm, desktop file, icons.
 dpkg-deb --fsys-tarfile "$DEB" | tar -x -C "$STAGING"
 [ -x "$STAGING/usr/bin/toolsboxapp" ] || { echo "toolsboxapp binary missing from the .deb payload." >&2; exit 1; }
 [ -x "$STAGING/usr/bin/tbxa" ] || { echo "tbxa missing from the .deb payload." >&2; exit 1; }
 [ -x "$STAGING/usr/bin/tbxm" ] || { echo "tbxm missing from the .deb payload." >&2; exit 1; }
 
-# Install license in the standard Arch location
 mkdir -p "$STAGING/usr/share/licenses/$PKGNAME"
 cp "$REPO_ROOT/LICENSE" "$STAGING/usr/share/licenses/$PKGNAME/LICENSE"
 
@@ -88,7 +77,6 @@ EOF
 
 mkdir -p "$OUT_DIR"
 
-# Top-level payload entries (usr, ...), with .PKGINFO first.
 mapfile -t TOPS < <(cd "$STAGING" && ls -A | grep -v '^\.PKGINFO$')
 tar --owner=0 --group=0 --numeric-owner \
   -I 'zstd -19 -T0 -q' \

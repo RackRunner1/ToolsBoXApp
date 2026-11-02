@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-# Generates the Tauri app icons with `tauri icon`.
-#
-# Source: contents/.assets/logo/fav.png (the app icon),
-# falling back to logo.png. When no source exists, a fallback icon is drawn
-# (requires python3 + Pillow) so the build never breaks.
-# Output: app/src-tauri/icons/
-#
-# Requires node_modules in app/ (run `npm install` in app/ first).
-#
-# Usage:
-#   ./scripts/generate-icons.sh [--source FILE]
 set -euo pipefail
 
 SOURCE=""
@@ -57,8 +46,6 @@ PYEOF
 fi
 
 echo "Icon source: $SOURCE"
-# The content logo is usually wide (not square): --fit contain scales it
-# inside the square canvas with transparent padding instead of cropping.
 (cd "$REPO_ROOT/app" && npx tauri icon "$SOURCE" --fit contain)
 echo "OK: icons generated in $REPO_ROOT/app/src-tauri/icons"
 ls -la "$REPO_ROOT/app/src-tauri/icons"
