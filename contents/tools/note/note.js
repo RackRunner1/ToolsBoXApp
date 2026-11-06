@@ -51,6 +51,7 @@ const elements = {
   incognitoModal: document.getElementById("incognito-modal"),
   incognitoModalCancel: document.getElementById("incognito-modal-cancel"),
   incognitoModalConfirm: document.getElementById("incognito-modal-confirm"),
+  deleteAllNotesBtn: document.getElementById("delete-all-notes-btn"),
 };
 
 let notes = [];
@@ -734,6 +735,17 @@ function deleteActiveNote() {
   }
 }
 
+function deleteAllNotes() {
+  clearTimeout(saveTimeout);
+  saveTimeout = null;
+  notes = [];
+  activeNoteId = null;
+  saveNotesToStorage();
+  showEditorEmpty();
+  renderList();
+  showNotification("All notes deleted");
+}
+
 function showNotification(message) {
   elements.notification.textContent = message;
   elements.notification.classList.add("show");
@@ -971,6 +983,14 @@ function setupEventListeners() {
     if (e.target === elements.incognitoModal) hideIncognitoModal();
   });
 
+  elements.deleteAllNotesBtn.addEventListener("click", () => {
+    showDeleteModal(deleteAllNotes, {
+      title: "Delete all notes",
+      message: "Delete every note? Your settings will be kept. This action cannot be undone.",
+      confirmDelay: 3000,
+    });
+  });
+
   window.addEventListener("storage", (e) => {
     if (e.key !== null && e.key !== STORAGE_KEY && e.key !== FOLDERS_KEY) return;
     handleExternalSync();
@@ -990,16 +1010,27 @@ function setupEventListeners() {
 
 let deleteModalCallback = null;
 
+let deleteModalConfirmTimer = null;
+
 function showDeleteModal(
   callback,
   {
     title = "Delete note",
     message = "Are you sure you want to delete this note? This action cannot be undone.",
+    confirmDelay = 0,
   } = {}
 ) {
   deleteModalCallback = callback;
   elements.deleteModalTitle.textContent = title;
   elements.deleteModalMessage.textContent = message;
+  clearTimeout(deleteModalConfirmTimer);
+  elements.deleteModalConfirm.disabled = confirmDelay > 0;
+  if (confirmDelay > 0) {
+    deleteModalConfirmTimer = setTimeout(() => {
+      elements.deleteModalConfirm.disabled = false;
+      deleteModalConfirmTimer = null;
+    }, confirmDelay);
+  }
   elements.deleteModal.classList.add("show");
 }
 
