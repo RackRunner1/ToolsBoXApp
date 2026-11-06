@@ -22,6 +22,9 @@ use std::process::Command;
 
 const API_URL: &str = "https://api.github.com/repos/RackRunner1/ToolsBoXApp/releases/latest";
 
+const BANNER_INDENT: &str = "    ";
+const TEXT_INDENT: &str = "            ";
+
 /// ToolsBoXApp ASCII banner, preceded by two blank lines and followed by one,
 /// so the progress bar and the final message stand apart from it.
 const BANNER: &str = r"████████╗ ██████╗  ██████╗ ██╗     ███████╗██████╗  ██████╗ ██╗  ██╗ █████╗ ██████╗ ██████╗ 
@@ -36,7 +39,9 @@ const BANNER: &str = r"████████╗ ██████╗  ██
 fn print_banner() {
     println!();
     println!();
-    println!("{BANNER}");
+    for line in BANNER.lines() {
+        println!("{BANNER_INDENT}{line}");
+    }
     println!();
 }
 
@@ -55,18 +60,18 @@ impl Progress {
 
     fn set(&self, pct: u8) {
         if self.tty {
-            print!("\r{}", progress_line(pct));
+            print!("\r{TEXT_INDENT}{}", progress_line(pct));
             std::io::stdout().flush().ok();
         }
         else {
-            println!("{}", progress_line(pct));
+            println!("{TEXT_INDENT}{}", progress_line(pct));
         }
     }
 
     /// Removes the bar line, keeping only the banner and the final message.
     fn finish(&self) {
         if self.tty {
-            print!("\r{:width$}\r", "", width = 40);
+            print!("\r{:width$}\r", "", width = TEXT_INDENT.len() + 40);
             std::io::stdout().flush().ok();
         }
     }
@@ -87,7 +92,7 @@ fn progress_line(pct: u8) -> String {
 /// Clears the progress bar, prints an error, and returns a failure code.
 fn fail(bar: &Progress, message: String) -> i32 {
     bar.finish();
-    eprintln!("{message}");
+    eprintln!("{TEXT_INDENT}{message}");
     1
 }
 
@@ -903,7 +908,7 @@ fn cmd_update(prog: &str) -> i32 {
         if let Ok(current) = installed_version(&package, kind) {
             if !is_newer(&latest, &current) {
                 print_banner();
-                println!("You are already on the latest version of TBXA.");
+                println!("{TEXT_INDENT}You are already on the latest version of TBXA.");
                 return 0;
             }
         }
@@ -1037,10 +1042,10 @@ fn install_release(
 
     bar.finish();
     if op == "update" {
-        println!("ToolsBoXApp have been updated on the latest version");
+        println!("{TEXT_INDENT}ToolsBoXApp have been updated on the latest version");
     }
     else {
-        println!("ToolsBoXApp have been reinstalled on the latest version");
+        println!("{TEXT_INDENT}ToolsBoXApp have been reinstalled on the latest version");
     }
     0
 }
@@ -1075,7 +1080,7 @@ fn cmd_uninstall(prog: &str) -> i32 {
     bar.set(100);
 
     bar.finish();
-    println!("ToolsBoXApp have been uninstalled");
+    println!("{TEXT_INDENT}ToolsBoXApp have been uninstalled");
     0
 }
 
