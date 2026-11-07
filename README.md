@@ -28,7 +28,7 @@ up to date.
 Open a terminal and run:
 
 ```sh
-curl -fsSL https://tbxm.org/install.sh | bash
+curl -fsSL https://get.tbxm.org | bash
 ```
 
 The script detects your distribution and installs the right package for you.
