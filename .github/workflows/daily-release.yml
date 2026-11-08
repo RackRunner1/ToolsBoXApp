@@ -1,20 +1,5 @@
 name: Daily Build & Release
 
-# Daily build of ToolsBoXApp (x64 DEB + RPM + Arch packages) from the content synced
-# from ToolsBoXMachine, then publication as a GitHub release.
-#
-# - every day at midnight (UTC)
-# - or on demand from the repository Actions tab
-#
-# Linux only. All packages also install the `tbxa`/`tbxm` terminal companion
-# (`tbxa update` / `tbxa uninstall` / same with `tbxm`): .deb for
-# Debian/Ubuntu, .rpm for Fedora/RHEL, .pkg.tar.zst for Arch Linux.
-#
-# The `check` job compares the source commit embedded in the latest release
-# with the current upstream HEAD: when ToolsBoXMachine has not moved, the
-# `build` job is skipped entirely (no identical rebuild, no empty release).
-# Pass `force: true` on manual runs to rebuild anyway (e.g. after app-code
-# changes with no upstream movement).
 
 on:
   schedule:
@@ -49,10 +34,6 @@ env:
   TBX_SOURCE_REPO: RackRunner1/ToolsBoXMachine
 
 jobs:
-  # -----------------------------------------------------------------------
-  # Should we build? Compare upstream HEAD with the source commit embedded
-  # in the latest published release.
-  # -----------------------------------------------------------------------
   check:
     runs-on: ubuntu-latest
     outputs:
@@ -107,7 +88,6 @@ jobs:
         run: |
           BRANCH="${{ steps.vars.outputs.branch }}"
 
-          # Any doubt below defaults to building (safe direction).
           LATEST_TAG="$(curl -fsSL --max-time 30 \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
@@ -149,10 +129,6 @@ jobs:
             echo "New upstream commits detected, building."
           fi
 
-  # -----------------------------------------------------------------------
-  # Full pipeline: sync, build the DEB + RPM + Arch packages, publish the release.
-  # Runs only when the check job detected upstream changes.
-  # -----------------------------------------------------------------------
   build:
     needs: check
     if: needs.check.outputs.has_changes == 'true'
@@ -164,9 +140,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      # ---------------------------------------------------------------------
-      # 1. Fetch the content from ToolsBoXMachine
-      # ---------------------------------------------------------------------
       - name: Sync contents/ from ToolsBoXMachine
         if: needs.check.outputs.do_sync == 'true'
         run: ./scripts/sync-contents.sh --source-repo "https://github.com/${{ env.TBX_SOURCE_REPO }}.git" --branch "${{ needs.check.outputs.branch }}"
@@ -184,9 +157,6 @@ jobs:
           git commit -m "chore(contents): sync ToolsBoXMachine ${{ needs.check.outputs.tag }}"
           git push || { echo "Push rejected, rebasing then retrying."; git pull --rebase && git push; }
 
-      # ---------------------------------------------------------------------
-      # 2. Build preparation (web assets, JS deps, icons, version)
-      # ---------------------------------------------------------------------
       - name: Prepare web assets (embedded into the binary)
         run: ./scripts/prepare-web.sh
 
@@ -218,9 +188,6 @@ jobs:
           print(f"Version injected: {check}")
           PYEOF
 
-      # ---------------------------------------------------------------------
-      # 3. Toolchains (Rust + Linux WebKit build dependencies)
-      # ---------------------------------------------------------------------
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
@@ -239,9 +206,6 @@ jobs:
         with:
           workspaces: app/src-tauri
 
-      # ---------------------------------------------------------------------
-      # 4. Test + build the tbxa companion CLI
-      # ---------------------------------------------------------------------
       - name: Test the tbxa CLI
         run: cargo test --manifest-path cli/Cargo.toml
 
@@ -253,9 +217,6 @@ jobs:
           cp cli/target/release/tbxa /tmp/tbxm
           /tmp/tbxm --help | grep -q "tbxm"
 
-      # ---------------------------------------------------------------------
-      # 5. Build the x64 DEB + RPM + Arch packages
-      # ---------------------------------------------------------------------
       - name: Build (release) + DEB/RPM bundlers
         working-directory: app
         run: npm run build
@@ -306,9 +267,6 @@ jobs:
           (cd artifacts && sha256sum *.pkg.tar.zst >> checksums.txt)
           cat artifacts/checksums.txt
 
-      # ---------------------------------------------------------------------
-      # 6. Release notes (changelog Machine + App, comme ToolsBoXMachine)
-      # ---------------------------------------------------------------------
       - name: Prepare the release notes
         if: needs.check.outputs.do_release == 'true'
         id: notes
@@ -340,7 +298,6 @@ jobs:
           TEST_FILE=$(mktemp)
           OTHER_FILE=$(mktemp)
 
-          # Header identique a ToolsBoXMachine
           {
             echo "# 🪟 Build Name: ${NAME}"
             echo ""
@@ -350,8 +307,6 @@ jobs:
 
           COMMIT_REGEX='^([a-zA-Z]+)(\(([^)]+)\))?!?:\ (.+)$'
 
-          # Meme categorisation que ToolsBoXMachine, liste fusionnee Machine + App.
-          # Les commits chore(contents) de sync sont exclus (redondants avec le detail Machine).
           categorize() {
             while IFS='|' read -r HASH MSG; do
               [ -z "$HASH" ] && continue
@@ -390,7 +345,6 @@ jobs:
             done
           }
 
-          # -- Commits App depuis la derniere release App --
           echo "App commits since ${LAST_TAG:-(none)}:"
           if [ -n "$LAST_TAG" ] && git rev-parse "$LAST_TAG" >/dev/null 2>&1; then
             git log "${LAST_TAG}..HEAD" --pretty=tformat:"%H|%s" --no-merges | tee /tmp/app-commits.txt | head -5
@@ -401,7 +355,6 @@ jobs:
             categorize < /tmp/app-commits.txt
           fi
 
-          # -- Commits Machine entre l'ancien et le nouveau sourceSha --
           echo "Cloning $SOURCE_REPO for upstream log..."
           rm -rf /tmp/tbxm-log
           git clone --quiet "https://github.com/${SOURCE_REPO}.git" --branch "$BRANCH" /tmp/tbxm-log 2>/dev/null || echo "Upstream clone failed, skipping Machine commits."
@@ -424,7 +377,6 @@ jobs:
             rm -rf /tmp/tbxm-log
           fi
 
-          # Sections dans le meme ordre que ToolsBoXMachine
           append_section() {
             local file="$1"
             local title="$2"
@@ -457,9 +409,6 @@ jobs:
 
           rm -f "$OUTPUT_FILE"
 
-      # ---------------------------------------------------------------------
-      # 7. Publish the release
-      # ---------------------------------------------------------------------
       - name: Publish the ${{ needs.check.outputs.tag }} release
         if: needs.check.outputs.do_release == 'true'
         uses: softprops/action-gh-release@v2
@@ -476,9 +425,6 @@ jobs:
             artifacts/*.pkg.tar.zst
             artifacts/checksums.txt
 
-      # ---------------------------------------------------------------------
-      # 8. Publish to Arch User Repository (AUR)
-      # ---------------------------------------------------------------------
       - name: Publish to Arch User Repository (AUR)
         if: needs.check.outputs.do_release == 'true'
         env:

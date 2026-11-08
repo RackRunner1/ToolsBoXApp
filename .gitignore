@@ -1,28 +1,17 @@
-# ---------------------------------------------------------------------------
-# Rust / Tauri
-# ---------------------------------------------------------------------------
 /target/
 app/src-tauri/target/
 app/src-tauri/gen/
 cli/target/
 
-# JS dependencies (Tauri CLI)
 node_modules/
 package-lock.json
 
-# Web content staged for the build (copied from contents/ by
-# scripts/prepare-web.sh, regenerated on every build)
 app/web/*
 !app/web/.gitkeep
 
-# Icons generated from the content logo (`tauri icon`, scripts/generate-icons.sh)
 app/src-tauri/icons/
-# Local fallback logo drawn when the content logo is missing
 app/src-tauri/fallback-logo.png
 
-# ---------------------------------------------------------------------------
-# Local artifacts / scratch files
-# ---------------------------------------------------------------------------
 artifacts/
 *.log
 *.user

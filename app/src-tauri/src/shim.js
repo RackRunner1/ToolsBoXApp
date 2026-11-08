@@ -1,18 +1,3 @@
-/*!
- * ToolsBoXApp - shim injected into every page loaded by the WebView.
- *
- * Responsibilities:
- *   1. Downloads: pages generate blobs (`<a download href="blob:...">`)
- *      that the WebView cannot save -> native save dialog.
- *   2. External links: opened in the system browser, never inside the app.
- *   3. Clipboard: fallback through `execCommand('copy')` when the modern
- *      API fails.
- *
- * Updates are handled outside the app through the `tbxa` terminal command
- * (`tbxa update` / `tbxa uninstall`).
- *
- * The shim is re-injected on every navigation: it is idempotent per document.
- */
 (function () {
   'use strict';
 
@@ -21,9 +6,6 @@
   }
   window.__TBX_SHIM_ACTIVE__ = true;
 
-  /* ------------------------------------------------------------------ *
-   *  Access to the Tauri IPC (window.__TAURI__ or __TAURI_INTERNALS__)
-   * ------------------------------------------------------------------ */
   function ipc() {
     var global = window.__TAURI__;
     if (global && global.core && typeof global.core.invoke === 'function') {
@@ -55,9 +37,6 @@
     }
   }
 
-  /* ------------------------------------------------------------------ *
-   *  Styles (injected once)
-   * ------------------------------------------------------------------ */
   var CSS = [
     '[data-tbx-ui]{all:initial;box-sizing:border-box;font-family:"Segoe UI",system-ui,sans-serif;}',
     '[data-tbx-toast]{position:fixed;right:16px;bottom:16px;z-index:2147483646;display:flex;',
@@ -79,9 +58,6 @@
     (document.head || document.documentElement).appendChild(style);
   }
 
-  /* ------------------------------------------------------------------ *
-   *  Notifications
-   * ------------------------------------------------------------------ */
   function toast(message, actionLabel, action, ttl) {
     if (!document.body) {
       return;
@@ -119,9 +95,6 @@
     timer = window.setTimeout(close, typeof ttl === 'number' ? ttl : 7000);
   }
 
-  /* ------------------------------------------------------------------ *
-   *  1. Downloads (blob: and data:)
-   * ------------------------------------------------------------------ */
   function fileNameFromUrl(url, fallback) {
     var name = fallback || 'file';
     if (!url || url.indexOf('data:') !== 0) {
@@ -181,9 +154,6 @@
       });
   }
 
-  /* ------------------------------------------------------------------ *
-   *  2 & 3. Clicks: downloads and external links
-   * ------------------------------------------------------------------ */
   function closestAnchor(node) {
     while (node && node !== document.body) {
       if (node.tagName === 'A') {
@@ -210,7 +180,6 @@
       return;
     }
 
-    // 1. Download requested by the page: <a download href="...">
     var wantsDownload = anchor.hasAttribute('download')
       || anchor.hasAttribute('data-tbx-download');
     var isRemote = /^(https?:|mailto:)/i.test(url);
@@ -227,7 +196,6 @@
       return;
     }
 
-    // 2. External link or new-tab opener -> system browser
     var target = anchor.getAttribute('target');
     if (!isRemote && target !== '_blank') {
       return;
@@ -239,9 +207,6 @@
     });
   }
 
-  /* ------------------------------------------------------------------ *
-   *  4. Clipboard (fallback)
-   * ------------------------------------------------------------------ */
   function legacyCopy(text) {
     return new Promise(function (resolve, reject) {
       var area = document.createElement('textarea');
@@ -256,7 +221,7 @@
       try {
         area.setSelectionRange(0, area.value.length);
       }
-      catch (error) { /* ignored */ }
+      catch (error) { }
 
       var ok = false;
       try {
@@ -296,9 +261,6 @@
     }
   }
 
-  /* ------------------------------------------------------------------ *
-   *  5. window.open
-   * ------------------------------------------------------------------ */
   function patchWindowOpen() {
     var nativeOpen = window.open;
     window.open = function (url, name, features) {
@@ -319,9 +281,6 @@
     };
   }
 
-  /* ------------------------------------------------------------------ *
-   *  Bootstrap
-   * ------------------------------------------------------------------ */
   function boot() {
     injectStyles();
     patchClipboard();

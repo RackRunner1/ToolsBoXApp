@@ -1,13 +1,3 @@
-//! ToolsBoXApp - desktop shell (WebKit) around the ToolsBoXMachine content.
-//!
-//! - The main window loads `index.html` from the embedded assets
-//!   (frontendDist -> app/web/).
-//! - Navigation between HTML files happens naturally inside the WebView.
-//! - An initialization script (shim.js) is injected on every page load to
-//!   handle: downloads, external links and clipboard.
-//!
-//! Updates are handled outside the app, through the `tbxa` terminal command
-//! (`tbxa update` / `tbxa uninstall`).
 
 mod download;
 mod shim;
@@ -22,8 +12,6 @@ fn main() {
             download::open_external
         ])
         .setup(|app| {
-            // The window is declared with "create": false in tauri.conf.json
-            // so the initialization script can be attached to it.
             let window_config = app
                 .handle()
                 .config()

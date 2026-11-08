@@ -1,21 +1,3 @@
-//! tbxa (alias tbxm) - terminal companion for ToolsBoXApp.
-//!
-//! Commands:
-//!   tbxa update    - install the latest .rpm/.deb/.pkg.tar.zst from GitHub releases
-//!                    when it is newer than the installed version.
-//!   tbxa reinstall - force-reinstall the latest published package.
-//!   tbxa uninstall - remove the ToolsBoXApp package.
-//!   tbxa -v/--version - print the installed version.
-//!   tbxa -h/--help    - print the command list.
-//!
-//! `tbxm` is an alias: both names behave identically.
-//!
-//! The installed package name and version are discovered at runtime through
-//! the RPM database (the package owning this very executable), the DPKG
-//! database on Debian/Ubuntu, or pacman on Arch Linux, so no name is
-//! hardcoded. External tools used:
-//! `rpm`/`dpkg-query`/`pacman -Qo`, `curl`, `dnf`/`yum`, `apt-get` or
-//! `pacman -U`/`pacman -R`, `sudo` (only when not running as root).
 
 use std::io::{IsTerminal, Write};
 use std::process::Command;
@@ -25,8 +7,6 @@ const API_URL: &str = "https://api.github.com/repos/RackRunner1/ToolsBoXApp/rele
 const BANNER_INDENT: &str = "    ";
 const TEXT_INDENT: &str = "            ";
 
-/// ToolsBoXApp ASCII banner, preceded by two blank lines and followed by one,
-/// so the progress bar and the final message stand apart from it.
 const BANNER: &str = r"████████╗ ██████╗  ██████╗ ██╗     ███████╗██████╗  ██████╗ ██╗  ██╗ █████╗ ██████╗ ██████╗ 
 ╚══██╔══╝██╔═══██╗██╔═══██╗██║     ██╔════╝██╔══██╗██╔═══██╗╚██╗██╔╝██╔══██╗██╔══██╗██╔══██╗
    ██║   ██║   ██║██║   ██║██║     ███████╗██████╔╝██║   ██║ ╚███╔╝ ███████║██████╔╝██████╔╝
@@ -34,8 +14,6 @@ const BANNER: &str = r"████████╗ ██████╗  ██
    ██║   ╚██████╔╝╚██████╔╝███████╗███████║██████╔╝╚██████╔╝██╔╝ ██╗██║  ██║██║     ██║     
    ╚═╝    ╚═════╝  ╚═════╝ ╚══════╝╚══════╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝     ";
 
-/// Prints two blank lines, then the banner, then one blank line.
-/// Every operation starts with this.
 fn print_banner() {
     println!();
     println!();
@@ -45,8 +23,6 @@ fn print_banner() {
     println!();
 }
 
-/// Single-line progress bar (`████████░░░░░░  42%`): redrawn in place on a
-/// terminal, printed as plain lines when stdout is piped.
 struct Progress {
     tty: bool,
 }
@@ -68,7 +44,6 @@ impl Progress {
         }
     }
 
-    /// Removes the bar line, keeping only the banner and the final message.
     fn finish(&self) {
         if self.tty {
             print!("\r{:width$}\r", "", width = TEXT_INDENT.len() + 40);
@@ -77,7 +52,6 @@ impl Progress {
     }
 }
 
-/// Renders one progress line; the pure (unit-tested) part of [`Progress::set`].
 fn progress_line(pct: u8) -> String {
     const WIDTH: usize = 30;
     let pct = pct.min(100);
@@ -89,7 +63,6 @@ fn progress_line(pct: u8) -> String {
     )
 }
 
-/// Clears the progress bar, prints an error, and returns a failure code.
 fn fail(bar: &Progress, message: String) -> i32 {
     bar.finish();
     eprintln!("{TEXT_INDENT}{message}");
@@ -107,8 +80,6 @@ fn main() {
             print_help(&prog);
             0
         }
-        // Short flags are the first letter of their long form: -v/-h.
-        // `-V` is kept as a compatibility alias.
         Some("-v") | Some("-V") | Some("--version") => cmd_version(&prog),
         Some(other) => {
             eprintln!("{prog}: unknown command '{other}'. See '{prog} --help'.");
@@ -118,8 +89,6 @@ fn main() {
     std::process::exit(code);
 }
 
-/// Name under which the binary was invoked (`tbxa` by default, `tbxm` as alias).
-/// Both names behave identically; this only affects help/error messages.
 fn prog_name() -> String {
     let argv0 = std::env::args().next().unwrap_or_default();
     let base = argv0.rsplit('/').next().unwrap_or(&argv0);
@@ -146,12 +115,10 @@ fn print_help(prog: &str) {
     println!("Alias: tbxa and tbxm are interchangeable.");
 }
 
-/// Runs a program and returns its trimmed stdout on success.
 fn run_capture(program: &str, args: &[&str]) -> Result<String, String> {
     run_capture_env(program, args, &[])
 }
 
-/// Same as `run_capture`, with extra environment variables set for the child.
 fn run_capture_env(program: &str, args: &[&str], envs: &[(&str, &str)]) -> Result<String, String> {
     let output = Command::new(program)
         .args(args)
@@ -187,7 +154,6 @@ fn has_tool(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// Native package format owning this installation.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum PkgKind {
     Rpm,
@@ -205,8 +171,6 @@ impl PkgKind {
     }
 }
 
-/// Name of the installed package owning this executable via the RPM database,
-/// e.g. "tools-bo-x-app".
 fn installed_package_name_rpm() -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|error| format!("cannot locate executable: {error}"))?;
     let name = run_capture(
@@ -227,12 +191,10 @@ fn installed_package_name_rpm() -> Result<String, String> {
     Ok(name)
 }
 
-/// Parses `dpkg-query --search` output (`"pkg: /path"`) into the package name.
 fn parse_dpkg_search_owner(output: &str) -> Option<String> {
     let first = output.lines().next()?.trim();
     let colon = first.find(':')?;
     let name = first[..colon].trim();
-    // `dpkg-query -S` may list several packages ("a, b: /path"); keep the first.
     let name = name.split(',').next()?.trim();
     if name.is_empty() {
         return None;
@@ -240,8 +202,6 @@ fn parse_dpkg_search_owner(output: &str) -> Option<String> {
     Some(name.to_string())
 }
 
-/// Name of the installed package owning this executable via the DPKG database
-/// (Debian/Ubuntu), e.g. "toolsboxapp".
 fn installed_package_name_deb() -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|error| format!("cannot locate executable: {error}"))?;
     let output = run_capture("dpkg-query", &["--search", &exe.to_string_lossy()]).map_err(|_| {
@@ -251,8 +211,6 @@ fn installed_package_name_deb() -> Result<String, String> {
         .ok_or_else(|| "could not determine the installed package name.".to_string())
 }
 
-/// Parses `pacman -Qo` output (`"/usr/bin/tbxa is owned by toolsboxapp 2026.10.16-1"`)
-/// into the package name.
 fn parse_pacman_query_owner(output: &str) -> Option<String> {
     let line = output.lines().next()?.trim();
     let marker = "is owned by";
@@ -265,8 +223,6 @@ fn parse_pacman_query_owner(output: &str) -> Option<String> {
     Some(name.to_string())
 }
 
-/// Name of the installed package owning this executable via the pacman
-/// database (Arch Linux), e.g. "toolsboxapp".
 fn installed_package_name_pacman() -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|error| format!("cannot locate executable: {error}"))?;
     let output = run_capture_env("pacman", &["-Qo", &exe.to_string_lossy()], &[("LC_ALL", "C")]).map_err(|_| {
@@ -276,7 +232,6 @@ fn installed_package_name_pacman() -> Result<String, String> {
         .ok_or_else(|| "could not determine the installed package name.".to_string())
 }
 
-/// `(package_name, kind)`, trying RPM first, then DPKG, then pacman.
 fn installed_package() -> Result<(String, PkgKind), String> {
     if let Ok(name) = installed_package_name_rpm() {
         return Ok((name, PkgKind::Rpm));
@@ -290,10 +245,6 @@ fn installed_package() -> Result<(String, PkgKind), String> {
     Err("tbxa does not seem to be installed through an RPM, DEB or pacman package.".to_string())
 }
 
-/// Strips a packaging revision suffix (`"2026.10.10-1"` -> `"2026.10.10"`),
-/// matching the RPM `%{VERSION}` semantics used for comparisons.
-/// Applies to Debian revisions and Arch `pkgrel` alike (neither version
-/// core contains a `-`).
 fn strip_release_suffix(version: &str) -> &str {
     match version.find('-') {
         Some(index) => &version[..index],
@@ -301,12 +252,6 @@ fn strip_release_suffix(version: &str) -> &str {
     }
 }
 
-/// Date-based package version embedded in a release asset URL, e.g.
-/// `https://…/toolsboxapp-2026.10.19-1.x86_64.rpm` -> `"2026.10.19"`.
-///
-/// Release tags are free-form (they can be overridden on manual runs), but
-/// package file names always carry the version actually installed by the
-/// package manager.
 fn release_version(url: &str) -> Option<String> {
     let file_name = url.rsplit('/').next()?;
     file_name
@@ -315,11 +260,6 @@ fn release_version(url: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Normalizes a version into a comparable list of numbers.
-///
-/// - `20261010`    -> `[2026, 10, 10]` (YYYYMMDD tags)
-/// - `2026.10.10`  -> `[2026, 10, 10]` (package versions)
-/// - anything else -> the numbers found, in order
 fn version_tuple(version: &str) -> Vec<u64> {
     let s = version.trim().trim_start_matches(['v', 'V']);
 
@@ -334,7 +274,6 @@ fn version_tuple(version: &str) -> Vec<u64> {
         .collect()
 }
 
-/// `true` when `candidate` is strictly newer than `current`.
 fn is_newer(candidate: &str, current: &str) -> bool {
     let candidate = version_tuple(candidate);
     let current = version_tuple(current);
@@ -351,7 +290,6 @@ fn is_newer(candidate: &str, current: &str) -> bool {
     false
 }
 
-/// Installed version of the package, e.g. "2026.10.10".
 fn installed_version(package: &str, kind: PkgKind) -> Result<String, String> {
     match kind {
         PkgKind::Rpm => run_capture("rpm", &["-q", "--queryformat", "%{VERSION}", package]),
@@ -365,7 +303,6 @@ fn installed_version(package: &str, kind: PkgKind) -> Result<String, String> {
             Ok(upstream)
         }
         PkgKind::Pacman => {
-            // `pacman -Q` prints "<name> <pkgver>-<pkgrel>".
             let out = run_capture("pacman", &["-Q", package])?;
             let full = out.split_whitespace().nth(1).unwrap_or("").trim();
             let upstream = strip_release_suffix(full).to_string();
@@ -377,8 +314,6 @@ fn installed_version(package: &str, kind: PkgKind) -> Result<String, String> {
     }
 }
 
-/// Decodes a JSON string literal starting just after the opening quote.
-/// Returns the decoded value and the byte index just past the closing quote.
 fn decode_json_string(chars: &[u8], mut index: usize) -> Option<(String, usize)> {
     let mut out = String::new();
     while index < chars.len() {
@@ -412,8 +347,6 @@ fn decode_json_string(chars: &[u8], mut index: usize) -> Option<(String, usize)>
                 index += 1;
             }
             _ => {
-                // Multi-byte UTF-8 sequences are copied through from the
-                // start of their leading byte.
                 let start = index;
                 index += 1;
                 while index < chars.len() && (chars[index] & 0xC0) == 0x80 {
@@ -426,8 +359,6 @@ fn decode_json_string(chars: &[u8], mut index: usize) -> Option<(String, usize)>
     None
 }
 
-/// Finds `"key"` in a JSON document and returns its string value.
-/// Only handles string values; enough for the GitHub release fields used here.
 fn json_string_value(doc: &str, key: &str) -> Option<String> {
     let bytes = doc.as_bytes();
     let needle = format!("\"{key}\"");
@@ -465,7 +396,6 @@ fn skip_json_whitespace(bytes: &[u8], mut index: usize) -> usize {
     index
 }
 
-/// Splits the top-level `{...}` objects of the `"assets"` array.
 fn json_asset_objects(doc: &str) -> Vec<&str> {
     let bytes = doc.as_bytes();
     let mut objects = Vec::new();
@@ -542,9 +472,6 @@ fn json_asset_objects(doc: &str) -> Vec<&str> {
     objects
 }
 
-/// Architecture markers for asset-name matching (same chip, different names
-/// per ecosystem): `x86_64` also matches `amd64`/`x86-64`, `aarch64` also
-/// matches `arm64`; any other architecture matches its own name.
 fn arch_markers_for(arch: &str) -> Vec<String> {
     match arch {
         "x86_64" => vec![
@@ -557,13 +484,6 @@ fn arch_markers_for(arch: &str) -> Vec<String> {
     }
 }
 
-/// `(tag_name, package_download_url)` from a GitHub "latest release" response
-/// for the given asset extension (`".rpm"`, `".deb"` or `".pkg.tar.zst"`),
-/// matching the given host architecture (see [`arch_markers_for`]).
-///
-/// Strict on architecture: when assets exist for the extension but none
-/// matches the host, this returns an error instead of a foreign-arch
-/// package (e.g. an `x86_64` build offered to an ARM machine).
 fn parse_latest_release_for_arch(
     doc: &str,
     extension: &str,
@@ -600,15 +520,10 @@ fn parse_latest_release_for_arch(
     ))
 }
 
-/// `(tag_name, package_download_url)` from a GitHub "latest release" response
-/// for the current host architecture.
 fn parse_latest_release_for(doc: &str, extension: &str) -> Result<(String, String), String> {
     parse_latest_release_for_arch(doc, extension, std::env::consts::ARCH)
 }
 
-/// `(tag_name, rpm_download_url)` from a GitHub "latest release" response.
-///
-/// Shorthand for `parse_latest_release_for(doc, ".rpm")`; kept for tests.
 #[cfg(test)]
 fn parse_latest_release(doc: &str) -> Result<(String, String), String> {
     parse_latest_release_for(doc, ".rpm")
@@ -669,10 +584,6 @@ fn download_file(url: &str, dest: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
-/// `browser_download_url` of the `checksums.txt` release asset, if published.
-/// The release pipeline (`daily-release.yml`) always uploads `checksums.txt`
-/// (`sha256sum` of every package); that exact name wins, anything else
-/// matching `sha256`/`checksum` is only a fallback.
 fn find_checksums_url(doc: &str) -> Option<String> {
     let mut fallback: Option<String> = None;
     for object in json_asset_objects(doc) {
@@ -692,7 +603,6 @@ fn find_checksums_url(doc: &str) -> Option<String> {
     fallback
 }
 
-/// SHA-256 hex digest of a file via `sha256sum` (else `shasum -a 256`).
 fn sha256_of(path: &std::path::Path) -> Result<String, String> {
     let arg = path.to_string_lossy().to_string();
     let output = if has_tool("sha256sum") {
@@ -714,9 +624,6 @@ fn sha256_of(path: &std::path::Path) -> Result<String, String> {
         .ok_or_else(|| "could not read the SHA-256 digest of the download.".to_string())
 }
 
-/// Checks `actual_hash` against the `checksums.txt` contents for `asset_name`.
-/// `checksums.txt` uses `sha256sum` output format (`"<hash>  <basename>"`);
-/// the filename must match exactly so a similarly-named file cannot stand in.
 fn check_sha256(checksums: &str, asset_name: &str, actual_hash: &str) -> Result<(), String> {
     for line in checksums.lines() {
         let fields: Vec<&str> = line.split_whitespace().collect();
@@ -743,8 +650,6 @@ fn check_sha256(checksums: &str, asset_name: &str, actual_hash: &str) -> Result<
     Err(format!("no SHA-256 entry for {asset_name} in checksums.txt"))
 }
 
-/// Package manager used for installs, matching the native package format:
-/// `dnf` else `yum` for RPM, `apt-get` for DEB, `pacman` for Arch.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Manager {
     Dnf,
@@ -799,9 +704,6 @@ fn package_manager(kind: PkgKind) -> Result<Manager, String> {
     }
 }
 
-/// Caches sudo credentials upfront (prompts now when needed) so later sudo
-/// calls reuse them silently instead of prompting mid-display.
-/// No-op when already root.
 fn sudo_auth(prog: &str, op: &str) -> Result<(), String> {
     if is_root() {
         return Ok(());
@@ -823,9 +725,6 @@ fn sudo_auth(prog: &str, op: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Runs the package manager, with sudo unless already root.
-/// `operation` is "install" (target is a package file) or "remove"
-/// (target is a package name).
 fn run_package_manager(manager: Manager, operation: &str, target: &str) -> Result<(), String> {
     let program = manager.program();
     let mut command = if is_root() {
@@ -840,7 +739,6 @@ fn run_package_manager(manager: Manager, operation: &str, target: &str) -> Resul
         sudo
     };
     if manager == Manager::Pacman {
-        // pacman uses single-letter operations and --noconfirm instead of -y.
         let flag = match operation {
             "install" => "-U",
             "remove" => "-R",
@@ -849,7 +747,6 @@ fn run_package_manager(manager: Manager, operation: &str, target: &str) -> Resul
         command.arg(flag).arg("--noconfirm").arg(target);
     }
     else {
-        // dnf/yum and apt-get share the "install"/"remove -y <target>" spelling.
         command.arg(operation).arg("-y").arg(target);
     }
     let output = command.output().map_err(|error| {
@@ -861,8 +758,6 @@ fn run_package_manager(manager: Manager, operation: &str, target: &str) -> Resul
         }
     })?;
     if !output.status.success() {
-        // Keep the display to the banner plus the progress bar: swallow the
-        // manager chatter, show only its tail on failure.
         let mut log = String::from_utf8_lossy(&output.stdout).into_owned();
         log.push_str(&String::from_utf8_lossy(&output.stderr));
         let lines: Vec<&str> = log.lines().collect();
@@ -906,10 +801,6 @@ fn cmd_update(prog: &str) -> i32 {
         }
     };
 
-    // Release tags are free-form, so the version is read from the package
-    // asset name (packages are always versioned with the build date). When
-    // the installed version is already up to date there is nothing to do,
-    // so neither sudo nor the package manager is needed.
     if let Some(latest) = release_version(&url) {
         if let Ok(current) = installed_version(&package, kind) {
             if !is_newer(&latest, &current) {
@@ -930,7 +821,6 @@ fn cmd_update(prog: &str) -> i32 {
     install_release(prog, "update", &doc, kind, &tag, &url)
 }
 
-/// `(release doc, tag, package url)` of the latest release asset for `kind`.
 fn fetch_latest(prog: &str, op: &str, kind: PkgKind) -> Result<(String, String, String), String> {
     let doc = fetch_url(API_URL).map_err(|error| format!("{prog} {op}: {error}"))?;
     let (tag, url) = parse_latest_release_for(&doc, kind.extension())
@@ -947,8 +837,6 @@ fn cmd_reinstall(prog: &str) -> i32 {
         }
     };
 
-    // Like `update`: reinstall the latest published package (release tags
-    // are free-form, so nothing is resolved from the installed version).
     if let Err(error) = sudo_auth(prog, "reinstall") {
         eprintln!("{error}");
         return 1;
@@ -966,9 +854,6 @@ fn cmd_reinstall(prog: &str) -> i32 {
     install_release(prog, "reinstall", &doc, kind, &tag, &url)
 }
 
-/// Downloads the release package for `kind`, verifies its SHA-256 against
-/// the release's checksums.txt and installs it. `op` is `"update"` or
-/// `"reinstall"` (used in messages and temp file names).
 fn install_release(
     prog: &str,
     op: &str,
@@ -999,9 +884,6 @@ fn install_release(
     }
     bar.set(50);
 
-    // HTTPS alone proves transport security, not artifact authenticity:
-    // every release publishes checksums.txt, so refuse to install a
-    // package that does not match its published SHA-256 hash.
     let sums_url = match find_checksums_url(doc) {
         Some(url) => url,
         None => {
@@ -1106,7 +988,6 @@ mod tests {
         let line = progress_line(100);
         assert_eq!(line.chars().filter(|&c| c == '█').count(), 30);
         assert!(line.ends_with("100%"));
-        // Clamped above 100.
         assert!(progress_line(250).ends_with("100%"));
     }
 
@@ -1172,18 +1053,14 @@ mod tests {
 
     #[test]
     fn refuses_foreign_arch_asset() {
-        // Only an ARM build published: an x86_64 machine must fail,
-        // not silently install the wrong architecture.
         let doc = r#"{"tag_name": "20261011", "assets": [
           {"name": "other-1.aarch64.rpm", "browser_download_url": "https://example.com/other.rpm"}
         ]}"#;
         assert!(parse_latest_release_for_arch(doc, ".rpm", "x86_64").is_err());
-        // And vice versa.
         let doc = r#"{"tag_name": "20261011", "assets": [
           {"name": "other-1.x86_64.rpm", "browser_download_url": "https://example.com/other.rpm"}
         ]}"#;
         assert!(parse_latest_release_for_arch(doc, ".rpm", "aarch64").is_err());
-        // Each architecture matches its own naming.
         let doc = r#"{"tag_name": "20261011", "assets": [
           {"name": "toolsboxapp_1_amd64.deb", "browser_download_url": "https://example.com/amd64.deb"},
           {"name": "toolsboxapp_1_arm64.deb", "browser_download_url": "https://example.com/arm64.deb"}
@@ -1192,7 +1069,6 @@ mod tests {
         assert_eq!(url, "https://example.com/arm64.deb");
         let (_, url) = parse_latest_release_for_arch(doc, ".deb", "x86_64").unwrap();
         assert_eq!(url, "https://example.com/amd64.deb");
-        // Unknown architectures match their own name.
         let doc = r#"{"tag_name": "20261011", "assets": [
           {"name": "other-1.riscv64.rpm", "browser_download_url": "https://example.com/other.rpm"}
         ]}"#;
@@ -1216,12 +1092,9 @@ mod tests {
     fn verifies_sha256_entries() {
         let sums = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  app.rpm\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  other.deb\n";
         assert!(check_sha256(sums, "app.rpm", &"a".repeat(64)).is_ok());
-        // Digests compare case-insensitively.
         assert!(check_sha256(sums, "other.deb", &"B".repeat(64)).is_ok());
-        // Mismatch and missing entries fail closed.
         assert!(check_sha256(sums, "app.rpm", &"b".repeat(64)).is_err());
         assert!(check_sha256(sums, "missing.rpm", &"a".repeat(64)).is_err());
-        // A similarly-named file cannot stand in for the real asset.
         let trap = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc  app.rpm.bak\n";
         assert!(check_sha256(trap, "app.rpm", &"c".repeat(64)).is_err());
     }
@@ -1294,7 +1167,6 @@ mod tests {
 
     #[test]
     fn parses_pacman_version_output() {
-        // `pacman -Q` prints "<name> <pkgver>-<pkgrel>".
         let out = "toolsboxapp 2026.10.16-1";
         let full = out.split_whitespace().nth(1).unwrap_or("").trim();
         assert_eq!(strip_release_suffix(full), "2026.10.16");
@@ -1311,7 +1183,6 @@ mod tests {
         let (tag, url) = parse_latest_release_for(doc, ".pkg.tar.zst").unwrap();
         assert_eq!(tag, "20261016");
         assert_eq!(url, "https://example.com/app.pkg.tar.zst");
-        // Other formats ignore the Arch asset and vice versa.
         let (tag, url) = parse_latest_release_for(doc, ".rpm").unwrap();
         assert_eq!(url, "https://example.com/app.rpm");
         assert_eq!(tag, "20261016");

@@ -1,4 +1,3 @@
-/* Functional test of the ToolsBoXApp shim with a fake DOM (Node). */
 'use strict';
 const fs = require('fs');
 const vm = require('vm');
@@ -22,7 +21,6 @@ function check(label, condition, extra) {
   }
 }
 
-/* Let pending promises and timers run. */
 function tick(times) {
   let chain = Promise.resolve();
   for (let i = 0; i < (times || 5); i++) {
@@ -31,9 +29,6 @@ function tick(times) {
   return chain;
 }
 
-/* ------------------------------------------------------------------ *
- *  Mini DOM
- * ------------------------------------------------------------------ */
 class FakeClassList {
   constructor() { this.items = []; }
   add(v) { this.items.push(v); }
@@ -125,7 +120,6 @@ function matches(element, selector) {
 }
 
 function dispatch(target, event) {
-  // Walk from the target up to the document (capture phase).
   const chain = [];
   let node = target;
   while (node) { chain.unshift(node); node = node.parentNode; }
@@ -139,9 +133,6 @@ function dispatch(target, event) {
   }
 }
 
-/* ------------------------------------------------------------------ *
- *  Simulated world
- * ------------------------------------------------------------------ */
 function createWorld() {
   const document = new FakeElement('#document');
   document.readyState = 'complete';
@@ -222,13 +213,7 @@ function isUint8Array(value) {
   return Object.prototype.toString.call(value) === '[object Uint8Array]';
 }
 
-/* ------------------------------------------------------------------ *
- *  Test suite (async: shim invokes resolve on later ticks)
- * ------------------------------------------------------------------ */
 async function main() {
-  /* -------------------------------------------------------------- *
-   *  1. Intercepted download
-   * -------------------------------------------------------------- */
   console.log('\n[1] Download interception');
   {
     const world = run(createWorld());
@@ -256,9 +241,6 @@ async function main() {
     }
   }
 
-  /* -------------------------------------------------------------- *
-   *  2. External links
-   * -------------------------------------------------------------- */
   console.log('\n[2] External links');
   {
     const world = run(createWorld());
@@ -280,9 +262,6 @@ async function main() {
       !world.invokes.some((entry) => entry.command === 'open_external' && entry.payload.url === '/tools/blur/blur.html'));
   }
 
-  /* -------------------------------------------------------------- *
-   *  3. window.open and clipboard
-   * -------------------------------------------------------------- */
   console.log('\n[3] window.open and clipboard');
   {
     const world = run(createWorld());
@@ -293,7 +272,6 @@ async function main() {
     check('window.open returns null', opened === null);
 
     const clipboard = world.window.navigator.clipboard;
-    // The native writeText rejects -> execCommand fallback (missing here) -> clean rejection.
     try {
       await clipboard.writeText('hello');
       check('clipboard fallback: should reject cleanly', false, 'resolved');

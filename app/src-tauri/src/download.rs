@@ -1,21 +1,10 @@
-//! Utility commands called by the shim injected into HTML pages.
-//!
-//! - `save_download`: intercepts clicks on `<a download>` (pages generate
-//!   blobs: QR codes, blurred images...) and saves them through the native
-//!   dialog, as the WebView cannot handle downloads.
-//! - `reveal_file`: opens the file manager on the folder containing a saved file.
-//! - `open_external`: opens an http(s)/mailto link in the default browser.
-//!
-//! Linux-only build.
 
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
-/// Header used by the shim to pass the file name (encoded).
 const FILENAME_HEADER: &str = "x-tbx-filename";
 
-/// Decodes a percent-encoded component (non-ASCII file names).
 fn decode_component(value: &str) -> String {
     let bytes = value.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
@@ -37,7 +26,6 @@ fn decode_component(value: &str) -> String {
     String::from_utf8(out).unwrap_or_else(|_| value.to_string())
 }
 
-/// Extension of the file name, when simple (used for the dialog filter).
 fn file_extension(name: &str) -> Option<String> {
     let extension = std::path::Path::new(name)
         .extension()
@@ -51,9 +39,6 @@ fn file_extension(name: &str) -> Option<String> {
     }
 }
 
-/// Saves a file sent by the page (raw invoke body).
-///
-/// Returns `None` when the user cancels the dialog.
 #[tauri::command]
 pub async fn save_download(
     app: AppHandle,
@@ -62,7 +47,6 @@ pub async fn save_download(
     let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
         return Err("expected raw body for save_download".to_string());
     };
-    // `body()` returns a reference: copy the bytes for the background task.
     let data = data.clone();
 
     let file_name = request
@@ -74,7 +58,6 @@ pub async fn save_download(
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "download.bin".to_string());
 
-    // Never block the WebView thread: dialog + disk write run on a worker task.
     let saved = tauri::async_runtime::spawn_blocking(move || -> Result<Option<String>, String> {
         let mut builder = app
             .dialog()
@@ -102,7 +85,6 @@ pub async fn save_download(
     Ok(saved)
 }
 
-/// Opens the file manager on the folder containing the file.
 #[tauri::command]
 pub fn reveal_file(path: String) -> Result<(), String> {
     let target = std::path::PathBuf::from(&path);
@@ -128,7 +110,6 @@ pub fn reveal_file(path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// Opens a URL in the default browser (allowed schemes only).
 #[tauri::command]
 pub fn open_external(app: AppHandle, url: String) -> Result<(), String> {
     let allowed = url.starts_with("https://")
