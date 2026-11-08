@@ -148,8 +148,14 @@ fn print_help(prog: &str) {
 
 /// Runs a program and returns its trimmed stdout on success.
 fn run_capture(program: &str, args: &[&str]) -> Result<String, String> {
+    run_capture_env(program, args, &[])
+}
+
+/// Same as `run_capture`, with extra environment variables set for the child.
+fn run_capture_env(program: &str, args: &[&str], envs: &[(&str, &str)]) -> Result<String, String> {
     let output = Command::new(program)
         .args(args)
+        .envs(envs.iter().copied())
         .output()
         .map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
@@ -263,7 +269,7 @@ fn parse_pacman_query_owner(output: &str) -> Option<String> {
 /// database (Arch Linux), e.g. "toolsboxapp".
 fn installed_package_name_pacman() -> Result<String, String> {
     let exe = std::env::current_exe().map_err(|error| format!("cannot locate executable: {error}"))?;
-    let output = run_capture("pacman", &["-Qo", &exe.to_string_lossy()]).map_err(|_| {
+    let output = run_capture_env("pacman", &["-Qo", &exe.to_string_lossy()], &[("LC_ALL", "C")]).map_err(|_| {
         "tbxa does not seem to be installed through a pacman package.".to_string()
     })?;
     parse_pacman_query_owner(&output)
