@@ -112,8 +112,9 @@ function setupStorageModal() {
   };
 
   elements.modalCloseBtn.addEventListener("click", close);
-  elements.storageModal.addEventListener("click", (e) => {
-    if (e.target === elements.storageModal) close();
+  closeOnBackdropClick(elements.storageModal, close);
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && elements.storageModal.classList.contains("show")) close();
   });
 }
 
@@ -946,9 +947,7 @@ function setupEventListeners() {
     if (deleteModalCallback) deleteModalCallback();
     hideDeleteModal();
   });
-  elements.deleteModal.addEventListener("click", (e) => {
-    if (e.target === elements.deleteModal) hideDeleteModal();
-  });
+  closeOnBackdropClick(elements.deleteModal, hideDeleteModal);
 
   elements.settingsBtn.addEventListener("click", () => {
     elements.settingsModal.classList.add("show");
@@ -958,10 +957,13 @@ function setupEventListeners() {
     elements.settingsModal.classList.remove("show");
   });
 
-  elements.settingsModal.addEventListener("click", (e) => {
-    if (e.target === elements.settingsModal) {
-      elements.settingsModal.classList.remove("show");
-    }
+  closeOnBackdropClick(elements.settingsModal, () => elements.settingsModal.classList.remove("show"));
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (elements.incognitoModal.classList.contains("show")) hideIncognitoModal();
+    else if (elements.deleteModal.classList.contains("show")) hideDeleteModal();
+    else if (elements.settingsModal.classList.contains("show")) elements.settingsModal.classList.remove("show");
   });
 
   elements.skipDeleteConfirm.addEventListener("change", () => {
@@ -996,9 +998,7 @@ function setupEventListeners() {
     hideIncognitoModal();
     showNotification("Incognito Mode enabled");
   });
-  elements.incognitoModal.addEventListener("click", (e) => {
-    if (e.target === elements.incognitoModal) hideIncognitoModal();
-  });
+  closeOnBackdropClick(elements.incognitoModal, hideIncognitoModal);
 
   elements.deleteAllNotesBtn.addEventListener("click", () => {
     showDeleteModal(deleteAllNotes, {
@@ -1114,6 +1114,16 @@ function showIncognitoModal() {
 
 function hideIncognitoModal() {
   elements.incognitoModal.classList.remove("show");
+}
+
+function closeOnBackdropClick(overlay, onClose) {
+  let pressStartedOnBackdrop = false;
+  overlay.addEventListener("pointerdown", (e) => {
+    pressStartedOnBackdrop = e.target === overlay;
+  });
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay && pressStartedOnBackdrop) onClose();
+  });
 }
 
 function renderMoveSection(target) {
