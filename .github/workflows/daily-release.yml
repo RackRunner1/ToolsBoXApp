@@ -453,6 +453,7 @@ jobs:
         env:
           GITLAB_TOKEN: ${{ secrets.TOKEN_GITLAB }}
         run: |
+          git reset --hard HEAD
           git fetch --force --tags origin
 
           FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --env-filter '
