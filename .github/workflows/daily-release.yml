@@ -615,15 +615,35 @@ jobs:
           NAME: ${{ steps.nsis.outputs.nsis_asset }}
           REPO: ${{ github.repository }}
         run: |
-          API="https://gitlab.com/api/v4/projects/ToolsBoXCompany%2FToolsBoXApp/releases/$TAG/assets/links"
+          API="https://gitlab.com/api/v4/projects/ToolsBoXCompany%2FToolsBoXApp/releases/${TAG}/assets/links"
           URL="https://github.com/${REPO}/releases/download/${TAG}/${NAME}"
+          RESP="$RUNNER_TEMP/gitlab-response.json"
 
-          EXISTING="$(curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "$API" \
-            | python3 -c "import json,sys; print(' '.join(str(l['id']) for l in json.load(sys.stdin) if l.get('name') == sys.argv[1]))" "$NAME")"
+          request() {
+            local method="$1" target="$2" data="$3" status="000" attempt
+            for attempt in 1 2 3; do
+              if [ -n "$data" ]; then
+                status="$(curl -sS -o "$RESP" -w '%{http_code}' -X "$method" -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" -H "Content-Type: application/json" -d "$data" "$target" || true)"
+              else
+                status="$(curl -sS -o "$RESP" -w '%{http_code}' -X "$method" -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "$target" || true)"
+              fi
+              case "$status" in
+                2??) return 0 ;;
+              esac
+              echo "GitLab $method $target: HTTP $status (attempt $attempt/3)"
+              head -c 500 "$RESP" 2>/dev/null || true
+              echo
+              sleep 5
+            done
+            return 1
+          }
+
+          request GET "$API" "" || { echo "Cannot list the GitLab release links for $TAG."; exit 1; }
+          EXISTING="$(python3 -c "import json,sys; print(' '.join(str(l['id']) for l in json.load(sys.stdin) if l.get('name') == sys.argv[1]))" "$NAME" < "$RESP")"
           for id in $EXISTING; do
-            curl -sf -X DELETE -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "$API/$id" > /dev/null
+            request DELETE "$API/$id" "" || { echo "Cannot remove the old GitLab link $id."; exit 1; }
           done
 
           BODY="$(python3 -c "import json,sys; print(json.dumps({'name': sys.argv[1], 'url': sys.argv[2]}))" "$NAME" "$URL")"
-          curl -sf -X POST -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" -H "Content-Type: application/json" -d "$BODY" "$API" > /dev/null
+          request POST "$API" "$BODY" || { echo "Cannot add the GitLab link for $NAME."; exit 1; }
           echo "GitLab release $TAG: link added for $NAME"
