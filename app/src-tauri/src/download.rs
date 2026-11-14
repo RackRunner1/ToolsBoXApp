@@ -96,9 +96,24 @@ pub fn reveal_file(path: String) -> Result<(), String> {
         .map(std::path::Path::to_path_buf)
         .unwrap_or_else(|| std::path::PathBuf::from("/"));
 
-    std::process::Command::new("xdg-open")
-        .arg(&folder)
+    open_folder(&folder)
+}
+
+#[cfg(target_os = "windows")]
+fn open_folder(folder: &std::path::Path) -> Result<(), String> {
+    std::process::Command::new("explorer.exe")
+        .arg(folder)
         .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("cannot open file manager: {error}"))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn open_folder(folder: &std::path::Path) -> Result<(), String> {
+    std::process::Command::new("xdg-open")
+        .arg(folder)
+        .spawn()
+        .map(|_| ())
         .map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
                 "xdg-open not found.".to_string()
@@ -106,8 +121,7 @@ pub fn reveal_file(path: String) -> Result<(), String> {
             else {
                 format!("cannot open file manager: {error}")
             }
-        })?;
-    Ok(())
+        })
 }
 
 #[tauri::command]

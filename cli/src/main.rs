@@ -1,4 +1,6 @@
 
+mod win;
+
 use std::io::{IsTerminal, Write};
 use std::process::Command;
 
@@ -91,7 +93,8 @@ fn main() {
 
 fn prog_name() -> String {
     let argv0 = std::env::args().next().unwrap_or_default();
-    let base = argv0.rsplit('/').next().unwrap_or(&argv0);
+    let base = argv0.rsplit(['/', '\\']).next().unwrap_or(&argv0);
+    let base = base.strip_suffix(".exe").unwrap_or(base);
     if base == "tbxm" {
         "tbxm".to_string()
     } else {
@@ -478,6 +481,7 @@ fn arch_markers_for(arch: &str) -> Vec<String> {
             "x86_64".to_string(),
             "amd64".to_string(),
             "x86-64".to_string(),
+            "x64".to_string(),
         ],
         "aarch64" => vec!["aarch64".to_string(), "arm64".to_string()],
         _ => vec![arch.to_string()],
@@ -772,6 +776,9 @@ fn run_package_manager(manager: Manager, operation: &str, target: &str) -> Resul
 }
 
 fn cmd_version(prog: &str) -> i32 {
+    if cfg!(windows) {
+        return win::version(prog);
+    }
     match installed_package().and_then(|(package, kind)| installed_version(&package, kind)) {
         Ok(version) => {
             println!("{prog} (ToolsBoXApp {version})");
@@ -785,6 +792,9 @@ fn cmd_version(prog: &str) -> i32 {
 }
 
 fn cmd_update(prog: &str) -> i32 {
+    if cfg!(windows) {
+        return win::update(prog);
+    }
     let (package, kind) = match installed_package() {
         Ok(pair) => pair,
         Err(error) => {
@@ -829,6 +839,9 @@ fn fetch_latest(prog: &str, op: &str, kind: PkgKind) -> Result<(String, String, 
 }
 
 fn cmd_reinstall(prog: &str) -> i32 {
+    if cfg!(windows) {
+        return win::reinstall(prog);
+    }
     let kind = match installed_package() {
         Ok((_, kind)) => kind,
         Err(error) => {
@@ -939,6 +952,9 @@ fn install_release(
 }
 
 fn cmd_uninstall(prog: &str) -> i32 {
+    if cfg!(windows) {
+        return win::uninstall(prog);
+    }
     let (package, kind) = match installed_package() {
         Ok(pair) => pair,
         Err(error) => {

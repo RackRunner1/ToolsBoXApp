@@ -503,3 +503,127 @@ jobs:
 
           curl -sf -X "$METHOD" -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" -H "Content-Type: application/json" \
             -d "$PAYLOAD" "$URL" > /dev/null
+
+  build-windows:
+    needs: [check, build]
+    if: needs.check.outputs.has_changes == 'true' && needs.check.outputs.do_release == 'true' && needs.build.result == 'success'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Expose python3 to the bash scripts
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '#!/usr/bin/env bash\nexec python "$@"\n' > "$RUNNER_TEMP/bin/python3"
+          chmod +x "$RUNNER_TEMP/bin/python3"
+          echo "$(cygpath -w "$RUNNER_TEMP/bin")" >> "$GITHUB_PATH"
+
+      - name: Prepare web assets (embedded into the binary)
+        run: ./scripts/prepare-web.sh
+
+      - name: Install JS dependencies (Tauri CLI)
+        working-directory: app
+        run: npm install --no-audit --no-fund
+
+      - name: Install Pillow (icon generation)
+        run: python -m pip install --quiet pillow
+
+      - name: Generate icons from the content logo (including icon.ico)
+        run: ./scripts/generate-icons.sh
+
+      - name: Inject the build version
+        run: |
+          python3 - "app/src-tauri/tauri.conf.json" "${{ needs.check.outputs.version }}" <<'PYEOF'
+          import re, sys
+          path, version = sys.argv[1], sys.argv[2]
+          with open(path, encoding="utf-8") as f:
+              raw = f.read()
+          new = re.sub(r'"version"\s*:\s*"[^"]*"', f'"version": "{version}"', raw, count=1, flags=re.IGNORECASE)
+          assert new != raw, "cannot inject version"
+          with open(path, "w", encoding="utf-8", newline="") as f:
+              f.write(new)
+          check = re.search(r'"version"\s*:\s*"([^"]*)"', new).group(1)
+          assert check == version, f"check failed: {check}"
+          print(f"Version injected: {check}")
+          PYEOF
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo (Tauri app and CLI)
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            app/src-tauri
+            cli
+
+      - name: Test and build the tbxa CLI (release)
+        run: |
+          cargo test --manifest-path cli/Cargo.toml
+          cargo build --release --manifest-path cli/Cargo.toml
+          cp cli/target/release/tbxa.exe cli/target/release/tbxm.exe
+          cli/target/release/tbxm.exe --help | grep -q "tbxm"
+
+      - name: Build the NSIS installer
+        working-directory: app
+        run: npx tauri build --bundles nsis
+
+      - name: Collect the installer
+        id: nsis
+        run: |
+          EXE="$(ls -t app/src-tauri/target/release/bundle/nsis/*-setup.exe 2>/dev/null | head -n 1)"
+          [ -n "$EXE" ] || { echo "No NSIS installer produced under app/src-tauri/target/release/bundle/nsis" >&2; exit 1; }
+          echo "Picked installer: $EXE"
+          mkdir -p artifacts
+          cp "$EXE" artifacts/
+          NAME="$(basename "$EXE")"
+          echo "nsis_asset=$NAME" >> "$GITHUB_OUTPUT"
+          (cd artifacts && sha256sum "$NAME")
+
+      - name: Add the installer to the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.check.outputs.tag }}
+          NAME: ${{ steps.nsis.outputs.nsis_asset }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern checksums.txt --dir artifacts --clobber
+          grep -v -F "  $NAME" artifacts/checksums.txt > artifacts/checksums.tmp || true
+          (cd artifacts && sha256sum "$NAME") >> artifacts/checksums.tmp
+          mv artifacts/checksums.tmp artifacts/checksums.txt
+          gh release upload "$TAG" "artifacts/$NAME" artifacts/checksums.txt --repo "$GITHUB_REPOSITORY" --clobber
+          cat artifacts/checksums.txt
+
+      - name: Add the installer to the GitLab release
+        env:
+          GITLAB_TOKEN: ${{ secrets.TOKEN_GITLAB }}
+          TAG: ${{ needs.check.outputs.tag }}
+          NAME: ${{ steps.nsis.outputs.nsis_asset }}
+          REPO: ${{ github.repository }}
+        run: |
+          API="https://gitlab.com/api/v4/projects/ToolsBoXCompany%2FToolsBoXApp/releases/$TAG/assets/links"
+          URL="https://github.com/${REPO}/releases/download/${TAG}/${NAME}"
+
+          EXISTING="$(curl -sf -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "$API" \
+            | python3 -c "import json,sys; print(' '.join(str(l['id']) for l in json.load(sys.stdin) if l.get('name') == sys.argv[1]))" "$NAME")"
+          for id in $EXISTING; do
+            curl -sf -X DELETE -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" "$API/$id" > /dev/null
+          done
+
+          BODY="$(python3 -c "import json,sys; print(json.dumps({'name': sys.argv[1], 'url': sys.argv[2]}))" "$NAME" "$URL")"
+          curl -sf -X POST -H "PRIVATE-TOKEN: ${GITLAB_TOKEN}" -H "Content-Type: application/json" -d "$BODY" "$API" > /dev/null
+          echo "GitLab release $TAG: link added for $NAME"
