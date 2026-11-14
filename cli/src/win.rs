@@ -7,7 +7,7 @@ use super::{
     TEXT_INDENT,
 };
 
-const UNINSTALL_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\toolsboxapp";
+const UNINSTALL_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\ToolsBoXApp";
 const INSTALLER_EXTENSION: &str = ".exe";
 const SILENT_FLAG: &str = "/S";
 
