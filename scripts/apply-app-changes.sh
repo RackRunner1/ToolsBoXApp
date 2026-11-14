@@ -127,4 +127,31 @@ else:
     print("index: maintenance banner removed.")
 PYEOF
 
+WEB_DIR="$WEB_DIR" python3 - <<'PYEOF'
+import os
+import re
+
+path = os.path.join(os.environ["WEB_DIR"], "tools", "new-year-countdown", "new-year-countdown.html")
+if not os.path.isfile(path):
+    print("(skipped) tools/new-year-countdown/new-year-countdown.html not found in the web copy.")
+    raise SystemExit(0)
+
+with open(path, encoding="utf-8") as f:
+    raw = f.read()
+
+new = re.sub(
+    r'\s*<section class="ny-info">.*?</section>',
+    "",
+    raw,
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+if new == raw:
+    print("new-year: info section not found, nothing to do.")
+else:
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(new)
+    print("new-year: 'How the New Year countdown works' section removed.")
+PYEOF
+
 echo "OK: app changes applied"
