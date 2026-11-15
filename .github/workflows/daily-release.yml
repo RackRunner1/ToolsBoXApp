@@ -217,8 +217,10 @@ jobs:
           cp cli/target/release/tbxa /tmp/tbxm
           /tmp/tbxm --help | grep -q "tbxm"
 
-      - name: Build (release) + DEB/RPM bundlers
+      - name: Build (release) + DEB/RPM/AppImage bundlers
         working-directory: app
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: npm run build
 
       - name: Collect and verify the packages
@@ -236,6 +238,13 @@ jobs:
           echo "Picked DEB: $DEB"
           cp "$DEB" artifacts/
           echo "deb_asset=$(basename "$DEB")" >> "$GITHUB_OUTPUT"
+
+          APPIMAGE="$(ls -t app/src-tauri/target/release/bundle/appimage/*.AppImage 2>/dev/null | head -n 1)"
+          [ -n "$APPIMAGE" ] || { echo "No AppImage produced under app/src-tauri/target/release/bundle/appimage" >&2; exit 1; }
+          echo "Picked AppImage: $APPIMAGE"
+          cp "$APPIMAGE" artifacts/
+          chmod +x "artifacts/$(basename "$APPIMAGE")"
+          echo "appimage_asset=$(basename "$APPIMAGE")" >> "$GITHUB_OUTPUT"
 
           echo "--- rpm info ---"
           rpm -qip "artifacts/$(basename "$RPM")"
@@ -257,7 +266,13 @@ jobs:
           grep -q "\.desktop$" /tmp/deb-list.txt || { echo "desktop file missing from the DEB!" >&2; exit 1; }
           echo "DEB verified: app binary, tbxa, tbxm and desktop file present."
 
-          (cd artifacts && sha256sum *.rpm *.deb > checksums.txt)
+          APPIMAGE_FILE="artifacts/$(basename "$APPIMAGE")"
+          [ "$(head -c 4 "$APPIMAGE_FILE" | od -An -c | tr -d ' ')" = "177ELF" ] || { echo "AppImage is not an ELF binary!" >&2; exit 1; }
+          grep -q "AI" <(dd if="$APPIMAGE_FILE" bs=1 skip=8 count=3 2>/dev/null) || { echo "AppImage type signature missing!" >&2; exit 1; }
+          echo "AppImage verified: ELF runtime with AppImage signature."
+          ls -la "$APPIMAGE_FILE"
+
+          (cd artifacts && sha256sum *.rpm *.deb *.AppImage > checksums.txt)
           cat artifacts/checksums.txt
 
       - name: Build the Arch Linux package (.pkg.tar.zst)
@@ -428,6 +443,7 @@ jobs:
           DEB_NAME="$(basename "$(ls artifacts/*.deb 2>/dev/null | head -n 1)")"
           RPM_NAME="$(basename "$(ls artifacts/*.rpm 2>/dev/null | head -n 1)")"
           ARCH_NAME="$(basename "$(ls artifacts/*.pkg.tar.zst 2>/dev/null | head -n 1)")"
+          APPIMAGE_NAME="$(basename "$(ls artifacts/*.AppImage 2>/dev/null | head -n 1)")"
           DOWNLOAD_BASE="https://github.com/${REPO}/releases/download/${TAG}"
 
           {
@@ -435,10 +451,10 @@ jobs:
             echo ""
             echo "## ⏬ Download"
             echo ""
-            echo "| Architecture | Windows | Debian/Ubuntu | Fedora/RHEL | Arch Linux |"
-            echo "| --- | --- | --- | --- | --- |"
-            echo "| x86-64 (64-bit) | [EXE](${DOWNLOAD_BASE}/${EXE_NAME}) | [Download](${DOWNLOAD_BASE}/${DEB_NAME}) | [Download](${DOWNLOAD_BASE}/${RPM_NAME}) | [Download](${DOWNLOAD_BASE}/${ARCH_NAME}) |"
-            echo "| AArch64 (ARM64) | | | | |"
+            echo "| Architecture | Windows | Debian/Ubuntu | Fedora/RHEL | Arch Linux | Any Linux |"
+            echo "| --- | --- | --- | --- | --- | --- |"
+            echo "| x86-64 (64-bit) | [EXE](${DOWNLOAD_BASE}/${EXE_NAME}) | [Download](${DOWNLOAD_BASE}/${DEB_NAME}) | [Download](${DOWNLOAD_BASE}/${RPM_NAME}) | [Download](${DOWNLOAD_BASE}/${ARCH_NAME}) | [AppImage](${DOWNLOAD_BASE}/${APPIMAGE_NAME}) |"
+            echo "| AArch64 (ARM64) | | | | | |"
             echo ""
             echo "## 🌟 What's Changed"
             echo ""
@@ -561,6 +577,7 @@ jobs:
             artifacts/*.rpm
             artifacts/*.deb
             artifacts/*.pkg.tar.zst
+            artifacts/*.AppImage
             artifacts/*-setup.exe
             artifacts/checksums.txt
 

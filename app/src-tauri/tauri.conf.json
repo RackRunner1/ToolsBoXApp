@@ -35,7 +35,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "rpm"],
+    "targets": ["deb", "rpm", "appimage"],
     "category": "Utility",
     "publisher": "RackRunner",
     "copyright": "Copyright (c) RackRunner",
