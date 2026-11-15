@@ -15,6 +15,7 @@ const CHEVRON_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height=
 
 const elements = {
   editorEmpty: document.getElementById("editor-empty"),
+  editorEmptyText: document.getElementById("editor-empty-text"),
   editorView: document.getElementById("editor-view"),
   titleInput: document.getElementById("note-title"),
   contentInput: document.getElementById("note-content"),
@@ -53,6 +54,7 @@ const elements = {
   incognitoModalConfirm: document.getElementById("incognito-modal-confirm"),
   deleteAllNotesBtn: document.getElementById("delete-all-notes-btn"),
   deleteAllNotesAndSettingsBtn: document.getElementById("delete-all-notes-and-settings-btn"),
+  resetAllSettingsBtn: document.getElementById("reset-all-settings-btn"),
 };
 
 let notes = [];
@@ -84,7 +86,7 @@ function init() {
   renderList();
   setupEventListeners();
   setupSettingsTabs();
-  selectFirstNote();
+  showEditorEmpty();
   elements.skipDeleteConfirm.checked = skipDeleteConfirm;
   elements.wordCountToggle.checked = showWordCount;
   elements.foldersToggle.checked = foldersEnabled;
@@ -435,6 +437,10 @@ function selectFirstNote() {
 
 function showEditorEmpty() {
   activeNoteId = null;
+  elements.editorEmptyText.textContent =
+    notes.length > 0
+      ? "Select a note in the sidebar to start working"
+      : "Create a new note or select one from the sidebar";
   elements.editorEmpty.style.display = "flex";
   elements.editorView.style.display = "none";
   applyWordCountVisibility();
@@ -764,6 +770,23 @@ function deleteAllNotesAndSettings() {
   showNotification("All notes and settings deleted");
 }
 
+function resetAllSettings() {
+  [SKIP_DELETE_KEY, WORD_COUNT_KEY, FOLDERS_ENABLED_KEY, INCOGNITO_KEY].forEach((key) =>
+    localStorage.removeItem(key)
+  );
+  skipDeleteConfirm = false;
+  showWordCount = true;
+  foldersEnabled = true;
+  incognitoMode = false;
+  elements.skipDeleteConfirm.checked = skipDeleteConfirm;
+  elements.wordCountToggle.checked = showWordCount;
+  elements.foldersToggle.checked = foldersEnabled;
+  elements.incognitoToggle.checked = incognitoMode;
+  applyFoldersState();
+  applyWordCountVisibility();
+  showNotification("All settings reset");
+}
+
 function showNotification(message) {
   elements.notification.textContent = message;
   elements.notification.classList.add("show");
@@ -1016,6 +1039,14 @@ function setupEventListeners() {
     });
   });
 
+  elements.resetAllSettingsBtn.addEventListener("click", () => {
+    showDeleteModal(resetAllSettings, {
+      title: "Reset all settings",
+      message: "Restore every note setting to its default value? Your notes and folders will be kept.",
+      confirmLabel: "Reset",
+    });
+  });
+
   window.addEventListener("storage", (e) => {
     if (e.key !== null && e.key !== STORAGE_KEY && e.key !== FOLDERS_KEY) return;
     handleExternalSync();
@@ -1043,11 +1074,13 @@ function showDeleteModal(
     title = "Delete note",
     message = "Are you sure you want to delete this note? This action cannot be undone.",
     confirmDelay = 0,
+    confirmLabel = "Delete",
   } = {}
 ) {
   deleteModalCallback = callback;
   elements.deleteModalTitle.textContent = title;
   elements.deleteModalMessage.textContent = message;
+  elements.deleteModalConfirm.textContent = confirmLabel;
   clearTimeout(deleteModalConfirmTimer);
   elements.deleteModalConfirm.disabled = confirmDelay > 0;
   if (confirmDelay > 0) {

@@ -32,7 +32,7 @@
       @media (max-width: 768px) {
         .notes-layout {
           grid-template-columns: 1fr;
-          grid-template-rows: 220px 1fr;
+          grid-template-rows: minmax(300px, 45%) 1fr;
           height: calc(100vh - 7rem);
           min-height: 350px;
           margin: 0.5rem auto 1.5rem;
@@ -42,7 +42,7 @@
 
       @media (max-width: 480px) {
         .notes-layout {
-          grid-template-rows: 180px 1fr;
+          grid-template-rows: minmax(300px, 45%) 1fr;
           height: calc(100vh - 6rem);
           min-height: 300px;
           padding: 0 0.5rem;
@@ -702,6 +702,28 @@
         margin-top: 0.75rem;
       }
 
+      .setting-card-stack {
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: flex-start;
+        gap: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+
+      .setting-card-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+      }
+
+      .setting-card-separator {
+        height: 1px;
+        background: rgba(255, 255, 255, 0.06);
+      }
+
       .setting-card-info {
         display: flex;
         flex-direction: column;
@@ -1071,7 +1093,7 @@
             <line x1="10" y1="9" x2="8" y2="9"/>
           </svg>
           <h3>No note selected</h3>
-          <p>Create a new note or select one from the sidebar</p>
+          <p id="editor-empty-text">Create a new note or select one from the sidebar</p>
         </div>
 
         <div id="editor-view">
@@ -1176,19 +1198,30 @@
                 <span class="toggle-slider"></span>
               </label>
             </div>
-            <div class="setting-card">
-              <div class="setting-card-info">
-                <div class="setting-card-title">Delete All Notes</div>
-                <div class="setting-card-desc">Permanently delete every note. Your settings will be kept</div>
+            <div class="setting-card setting-card-stack">
+              <div class="setting-card-row">
+                <div class="setting-card-info">
+                  <div class="setting-card-title">Delete All Notes</div>
+                  <div class="setting-card-desc">Permanently delete every note. Your settings will be kept</div>
+                </div>
+                <button class="setting-danger-btn" id="delete-all-notes-btn">Delete All Notes</button>
               </div>
-              <button class="setting-danger-btn" id="delete-all-notes-btn">Delete All Notes</button>
-            </div>
-            <div class="setting-card">
-              <div class="setting-card-info">
-                <div class="setting-card-title">Delete All Notes and Settings</div>
-                <div class="setting-card-desc">Permanently delete all notes and folders, and restore default note settings</div>
+              <div class="setting-card-separator"></div>
+              <div class="setting-card-row">
+                <div class="setting-card-info">
+                  <div class="setting-card-title">Delete All Notes and Settings</div>
+                  <div class="setting-card-desc">Permanently delete all notes and folders, and restore default note settings</div>
+                </div>
+                <button class="setting-danger-btn" id="delete-all-notes-and-settings-btn">Delete All Notes and Settings</button>
               </div>
-              <button class="setting-danger-btn" id="delete-all-notes-and-settings-btn">Delete All Notes and Settings</button>
+              <div class="setting-card-separator"></div>
+              <div class="setting-card-row">
+                <div class="setting-card-info">
+                  <div class="setting-card-title">Reset All Settings</div>
+                  <div class="setting-card-desc">Restore every note setting to its default value. Your notes and folders will be kept</div>
+                </div>
+                <button class="setting-danger-btn" id="reset-all-settings-btn">Reset All Settings</button>
+              </div>
             </div>
           </div>
         </div>
