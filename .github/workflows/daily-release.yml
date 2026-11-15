@@ -402,6 +402,7 @@ jobs:
           LAST_SHA: ${{ needs.check.outputs.last_sha }}
           SOURCE_REPO: ${{ env.TBX_SOURCE_REPO }}
           BRANCH: ${{ needs.check.outputs.branch }}
+          REPO: ${{ github.repository }}
         run: |
           echo "=== Generating notes ==="
           echo "TAG: $TAG"
@@ -423,8 +424,21 @@ jobs:
           TEST_FILE=$(mktemp)
           OTHER_FILE=$(mktemp)
 
+          EXE_NAME="$(basename "$(ls artifacts/*-setup.exe 2>/dev/null | head -n 1)")"
+          DEB_NAME="$(basename "$(ls artifacts/*.deb 2>/dev/null | head -n 1)")"
+          RPM_NAME="$(basename "$(ls artifacts/*.rpm 2>/dev/null | head -n 1)")"
+          ARCH_NAME="$(basename "$(ls artifacts/*.pkg.tar.zst 2>/dev/null | head -n 1)")"
+          DOWNLOAD_BASE="https://github.com/${REPO}/releases/download/${TAG}"
+
           {
             echo "# 🪟 Build Name: ${NAME}"
+            echo ""
+            echo "## ⏬ Download"
+            echo ""
+            echo "| Architecture | Windows | Debian/Ubuntu | Fedora/RHEL | Arch Linux |"
+            echo "| --- | --- | --- | --- | --- |"
+            echo "| x86-64 (64-bit) | [EXE](${DOWNLOAD_BASE}/${EXE_NAME}) | [Download](${DOWNLOAD_BASE}/${DEB_NAME}) | [Download](${DOWNLOAD_BASE}/${RPM_NAME}) | [Download](${DOWNLOAD_BASE}/${ARCH_NAME}) |"
+            echo "| AArch64 (ARM64) | | | | |"
             echo ""
             echo "## 🌟 What's Changed"
             echo ""
