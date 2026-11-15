@@ -20,6 +20,8 @@ up to date.
 - ✅ Debian, Ubuntu and derivatives (`.deb` package)
 - ✅ Fedora, Red Hat and derivatives (`.rpm` package)
 - ✅ Arch Linux and derivatives (`.pkg.tar.zst` package & AUR `toolsboxapp-bin`)
+- ✅ Any other Linux distribution (`.AppImage`, portable, no installation needed)
+- ✅ Windows (`-setup.exe` installer)
 
 ## Installation
 
@@ -41,16 +43,25 @@ yay -S toolsboxapp-bin
 paru -S toolsboxapp-bin
 ```
 
+### Option 3: Windows
+
+1. Download the `-setup.exe` installer from the
+   [latest release](https://github.com/RackRunner1/ToolsBoXApp/releases/latest).
+2. Run it and follow the instructions.
+
 ### Option 4: Manual
 
-1. Download the package for your distribution from the
+1. Download the package for your system from the
    [latest release](https://github.com/RackRunner1/ToolsBoXApp/releases/latest):
    the `.deb` file for Debian/Ubuntu, the `.rpm` file for Fedora/Red Hat,
-   the `.pkg.tar.zst` file for Arch Linux.
+   the `.pkg.tar.zst` file for Arch Linux, the `.AppImage` file for any other
+   Linux distribution, or the `-setup.exe` file for Windows.
 2. Install it:
    - Debian/Ubuntu: `sudo apt install ./<file>.deb`
    - Fedora/Red Hat: `sudo dnf install ./<file>.rpm`
    - Arch Linux: `sudo pacman -U ./<file>.pkg.tar.zst`
+   - Other Linux: `chmod +x ./<file>.AppImage`, then run `./<file>.AppImage`
+   - Windows: run the `-setup.exe` installer
 
 ## Update & uninstall
 
