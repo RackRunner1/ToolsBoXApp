@@ -506,7 +506,7 @@ jobs:
             categorize < /tmp/app-commits.txt
           else
             echo "No last App tag, taking all App commits"
-            git log --pretty=tformat:"%H|%s" --no-merges | tee /tmp/app-commits.txt | head -5
+            git log -n 100 --pretty=tformat:"%H|%s" --no-merges | tee /tmp/app-commits.txt | head -5
             categorize < /tmp/app-commits.txt
           fi
 
@@ -515,18 +515,20 @@ jobs:
           git clone --quiet "https://github.com/${SOURCE_REPO}.git" --branch "$BRANCH" /tmp/tbxm-log 2>/dev/null || echo "Upstream clone failed, skipping Machine commits."
           if [ -d /tmp/tbxm-log ]; then
             echo "Machine commits ${LAST_SHA:-?(none)}..${NEW_SHA:-HEAD}:"
-            if [ -n "$LAST_SHA" ] && [ -n "$NEW_SHA" ] && [ "$LAST_SHA" != "$NEW_SHA" ] \
+            if [ -n "$LAST_SHA" ] && [ "$LAST_SHA" = "$NEW_SHA" ]; then
+              echo "No new Machine commits since $LAST_TAG."
+            elif [ -n "$LAST_SHA" ] && [ -n "$NEW_SHA" ] && [ "$LAST_SHA" != "$NEW_SHA" ] \
               && git -C /tmp/tbxm-log cat-file -e "${LAST_SHA}^{commit}" 2>/dev/null \
               && git -C /tmp/tbxm-log cat-file -e "${NEW_SHA}^{commit}" 2>/dev/null; then
               git -C /tmp/tbxm-log log "${LAST_SHA}..${NEW_SHA}" --pretty=tformat:"%H|%s" --no-merges | tee /tmp/machine-commits.txt | head -5
               categorize < /tmp/machine-commits.txt
             elif [ -n "$NEW_SHA" ] && git -C /tmp/tbxm-log cat-file -e "${NEW_SHA}^{commit}" 2>/dev/null; then
               echo "No usable LAST_SHA, taking all Machine commits up to $NEW_SHA"
-              git -C /tmp/tbxm-log log "$NEW_SHA" --pretty=tformat:"%H|%s" --no-merges | tee /tmp/machine-commits.txt | head -5
+              git -C /tmp/tbxm-log log -n 100 "$NEW_SHA" --pretty=tformat:"%H|%s" --no-merges | tee /tmp/machine-commits.txt | head -5
               categorize < /tmp/machine-commits.txt
             else
               echo "No usable NEW_SHA, taking latest Machine commits from $BRANCH"
-              git -C /tmp/tbxm-log log --pretty=tformat:"%H|%s" --no-merges | tee /tmp/machine-commits.txt | head -5
+              git -C /tmp/tbxm-log log -n 100 --pretty=tformat:"%H|%s" --no-merges | tee /tmp/machine-commits.txt | head -5
               categorize < /tmp/machine-commits.txt
             fi
             rm -rf /tmp/tbxm-log
