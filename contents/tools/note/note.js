@@ -9,6 +9,7 @@ const WORD_COUNT_KEY = "tbxm_notes_show_word_count";
 const FOLDERS_ENABLED_KEY = "tbxm_notes_folders_enabled";
 const INCOGNITO_KEY = "tbxm_notes_incognito";
 const INCOGNITO_SESSION_COOKIE = "tbxm_notes_session";
+const TBXM_MAGIC = "TBXM1";
 
 const FOLDER_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
 const CHEVRON_ICON = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
@@ -33,6 +34,8 @@ const elements = {
   ctxNewFolder: document.getElementById("ctx-new-folder"),
   ctxNewSubfolder: document.getElementById("ctx-new-subfolder"),
   ctxDuplicate: document.getElementById("ctx-duplicate"),
+  ctxMoveTrigger: document.getElementById("ctx-move-trigger"),
+  ctxMoveSubmenu: document.getElementById("ctx-move-submenu"),
   ctxMoveSection: document.getElementById("ctx-move-section"),
   ctxRename: document.getElementById("ctx-rename"),
   ctxDelete: document.getElementById("ctx-delete"),
@@ -55,6 +58,19 @@ const elements = {
   deleteAllNotesBtn: document.getElementById("delete-all-notes-btn"),
   deleteAllNotesAndSettingsBtn: document.getElementById("delete-all-notes-and-settings-btn"),
   resetAllSettingsBtn: document.getElementById("reset-all-settings-btn"),
+  importFileBtn: document.getElementById("import-file-btn"),
+  importFileInput: document.getElementById("import-file-input"),
+  exportOpenBtn: document.getElementById("export-open-btn"),
+  exportModal: document.getElementById("export-modal"),
+  exportModalCancel: document.getElementById("export-modal-cancel"),
+  exportModalNext: document.getElementById("export-modal-next"),
+  exportModalBack: document.getElementById("export-modal-back"),
+  exportModalConfirm: document.getElementById("export-modal-confirm"),
+  exportSteps: document.querySelectorAll(".export-step"),
+  exportStepIndicator: document.querySelector(".export-step-indicator"),
+  exportScopeNotes: document.getElementById("export-scope-notes"),
+  exportScopeSettings: document.getElementById("export-scope-settings"),
+  formatOptions: document.querySelectorAll(".format-option"),
 };
 
 let notes = [];
@@ -290,9 +306,7 @@ function createFolderGroup(folder) {
   header.draggable = true;
   header.innerHTML = `
     <span class="folder-chevron">${CHEVRON_ICON}</span>
-    <span class="folder-icon">${FOLDER_ICON}</span>
     <span class="folder-name">${escapeHTML(folder.name)}</span>
-    <span class="folder-count">${directNotes.length}</span>
   `;
 
   header.addEventListener("click", () => toggleFolder(folder.id));
@@ -787,6 +801,202 @@ function resetAllSettings() {
   showNotification("All settings reset");
 }
 
+function buildExportData({ withNotes, withSettings }) {
+  flushPendingSave();
+  const data = {
+    app: "ToolsBoXMachine",
+    tool: "note",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+  };
+  if (withNotes) {
+    data.folders = folders;
+    data.notes = notes;
+  }
+  if (withSettings) {
+    data.settings = {
+      skipDeleteConfirm,
+      showWordCount,
+      foldersEnabled,
+      incognitoMode,
+    };
+  }
+  return data;
+}
+
+function encodeTbxm(json) {
+  const bytes = new TextEncoder().encode(json);
+  let binary = "";
+  bytes.forEach((b) => {
+    binary += String.fromCharCode(b);
+  });
+  return `${TBXM_MAGIC}\n${btoa(binary)}`;
+}
+
+function downloadFile(content, filename, mimeType) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function exportFileBaseName() {
+  return `tbxm-notes-${new Date().toISOString().slice(0, 10)}`;
+}
+
+let exportFormat = "tbxm";
+
+function setExportFormat(format) {
+  exportFormat = format;
+  elements.formatOptions.forEach((option) => {
+    option.classList.toggle("active", option.dataset.format === format);
+  });
+}
+
+function updateExportConfirm() {
+  elements.exportModalConfirm.disabled =
+    !elements.exportScopeNotes.checked && !elements.exportScopeSettings.checked;
+}
+
+function setExportStep(step) {
+  elements.exportSteps.forEach((el) => {
+    el.classList.toggle("active", Number(el.dataset.step) === step);
+  });
+  elements.exportStepIndicator.textContent = `Step ${step} of ${elements.exportSteps.length}`;
+}
+
+function showExportModal() {
+  setExportStep(1);
+  updateExportConfirm();
+  elements.exportModal.classList.add("show");
+}
+
+function hideExportModal() {
+  elements.exportModal.classList.remove("show");
+}
+
+function exportFile() {
+  const data = buildExportData({
+    withNotes: elements.exportScopeNotes.checked,
+    withSettings: elements.exportScopeSettings.checked,
+  });
+  if (exportFormat === "tbxm") {
+    downloadFile(encodeTbxm(JSON.stringify(data)), `${exportFileBaseName()}.tbxm`, "application/octet-stream");
+  } else {
+    downloadFile(JSON.stringify(data, null, 2), `${exportFileBaseName()}.json`, "application/json");
+  }
+  showNotification(`Exported as .${exportFormat}`);
+}
+
+let pendingImport = null;
+
+function parseImportFile(text) {
+  let json = text;
+  if (text.startsWith(`${TBXM_MAGIC}\n`)) {
+    const binary = atob(text.slice(TBXM_MAGIC.length + 1).trim());
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    json = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  }
+
+  const data = JSON.parse(json);
+  if (
+    !data ||
+    typeof data !== "object" ||
+    (data.app && data.app !== "ToolsBoXMachine") ||
+    (data.tool && data.tool !== "note")
+  ) {
+    throw new Error("Invalid file");
+  }
+
+  const hasNotes = Array.isArray(data.notes);
+  const hasSettings = !!data.settings && typeof data.settings === "object" && !Array.isArray(data.settings);
+  if (!hasNotes && !hasSettings) throw new Error("Invalid file");
+
+  return {
+    notes: hasNotes
+      ? data.notes.filter((n) => n && typeof n === "object" && typeof n.id === "string")
+      : null,
+    folders: hasNotes
+      ? (Array.isArray(data.folders)
+          ? data.folders.filter((f) => f && typeof f === "object" && typeof f.id === "string")
+          : [])
+      : null,
+    settings: hasSettings ? data.settings : null,
+  };
+}
+
+function applyImport(data) {
+  if (data.notes) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data.notes));
+    localStorage.setItem(FOLDERS_KEY, JSON.stringify(data.folders));
+    loadNotes();
+    loadFolders();
+    activeNoteId = null;
+  }
+
+  if (data.settings) {
+    const s = data.settings;
+    skipDeleteConfirm = s.skipDeleteConfirm === true;
+    showWordCount = s.showWordCount !== false;
+    foldersEnabled = s.foldersEnabled !== false;
+    localStorage.setItem(SKIP_DELETE_KEY, skipDeleteConfirm);
+    localStorage.setItem(WORD_COUNT_KEY, showWordCount);
+    localStorage.setItem(FOLDERS_ENABLED_KEY, foldersEnabled);
+    setIncognitoMode(s.incognitoMode === true);
+    elements.skipDeleteConfirm.checked = skipDeleteConfirm;
+    elements.wordCountToggle.checked = showWordCount;
+    elements.foldersToggle.checked = foldersEnabled;
+  }
+
+  applyFoldersState();
+  applyWordCountVisibility();
+  if (data.notes) selectFirstNote();
+
+  const imported = [];
+  if (data.notes) imported.push("notes and folders");
+  if (data.settings) imported.push("settings");
+  showNotification(`Imported ${imported.join(" and ")}`);
+}
+
+function requestImport(data) {
+  const lines = [];
+  if (data.notes) {
+    const noteCount = data.notes.length;
+    const folderCount = data.folders.length;
+    lines.push(
+      `Your current notes and folders will be replaced by ${noteCount} ${noteCount === 1 ? "note" : "notes"} and ${folderCount} ${folderCount === 1 ? "folder" : "folders"}.`
+    );
+  } else {
+    lines.push("Your notes and folders will be kept.");
+  }
+  if (data.settings) {
+    lines.push("Your current settings will be replaced by the settings in this file.");
+    if (data.settings.incognitoMode === true) {
+      lines.push("The file enables Incognito Mode: notes will be deleted when the browser session ends.");
+    }
+  } else {
+    lines.push("Your settings will be kept.");
+  }
+  lines.push("This action cannot be undone.");
+
+  pendingImport = data;
+  showDeleteModal(() => {
+    applyImport(pendingImport);
+    pendingImport = null;
+  }, {
+    title: "Import file",
+    message: lines.join(" "),
+    confirmLabel: "Import",
+  });
+}
+
 function showNotification(message) {
   elements.notification.textContent = message;
   elements.notification.classList.add("show");
@@ -932,6 +1142,18 @@ function setupEventListeners() {
     showNotification("Note duplicated");
   });
 
+  elements.ctxMoveTrigger.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openMoveSubmenu();
+  });
+  elements.ctxMoveTrigger.addEventListener("mouseenter", () => {
+    clearTimeout(moveSubmenuCloseTimer);
+    moveSubmenuOpenTimer = setTimeout(openMoveSubmenu, 500);
+  });
+  elements.ctxMoveTrigger.addEventListener("mouseleave", scheduleMoveSubmenuClose);
+  elements.ctxMoveSubmenu.addEventListener("mouseenter", () => clearTimeout(moveSubmenuCloseTimer));
+  elements.ctxMoveSubmenu.addEventListener("mouseleave", scheduleMoveSubmenuClose);
+
   elements.ctxMoveSection.addEventListener("click", (e) => {
     const item = e.target.closest("[data-folder-id]");
     if (!item || !contextTarget) return;
@@ -984,7 +1206,8 @@ function setupEventListeners() {
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (elements.incognitoModal.classList.contains("show")) hideIncognitoModal();
+    if (elements.exportModal.classList.contains("show")) hideExportModal();
+    else if (elements.incognitoModal.classList.contains("show")) hideIncognitoModal();
     else if (elements.deleteModal.classList.contains("show")) hideDeleteModal();
     else if (elements.settingsModal.classList.contains("show")) elements.settingsModal.classList.remove("show");
   });
@@ -1046,6 +1269,34 @@ function setupEventListeners() {
       confirmLabel: "Reset",
     });
   });
+
+  elements.importFileBtn.addEventListener("click", () => elements.importFileInput.click());
+  elements.importFileInput.addEventListener("change", async () => {
+    const file = elements.importFileInput.files[0];
+    elements.importFileInput.value = "";
+    if (!file) return;
+    try {
+      requestImport(parseImportFile(await file.text()));
+    } catch (e) {
+      console.error("Failed to import file", e);
+      showNotification("Could not import this file");
+    }
+  });
+
+  elements.exportOpenBtn.addEventListener("click", showExportModal);
+  elements.formatOptions.forEach((option) => {
+    option.addEventListener("click", () => setExportFormat(option.dataset.format));
+  });
+  elements.exportScopeNotes.addEventListener("change", updateExportConfirm);
+  elements.exportScopeSettings.addEventListener("change", updateExportConfirm);
+  elements.exportModalCancel.addEventListener("click", hideExportModal);
+  elements.exportModalNext.addEventListener("click", () => setExportStep(2));
+  elements.exportModalBack.addEventListener("click", () => setExportStep(1));
+  elements.exportModalConfirm.addEventListener("click", () => {
+    exportFile();
+    hideExportModal();
+  });
+  closeOnBackdropClick(elements.exportModal, hideExportModal);
 
   window.addEventListener("storage", (e) => {
     if (e.key !== null && e.key !== STORAGE_KEY && e.key !== FOLDERS_KEY) return;
@@ -1159,13 +1410,45 @@ function closeOnBackdropClick(overlay, onClose) {
   });
 }
 
+let moveSubmenuOpenTimer = null;
+let moveSubmenuCloseTimer = null;
+
+function openMoveSubmenu() {
+  clearTimeout(moveSubmenuOpenTimer);
+  clearTimeout(moveSubmenuCloseTimer);
+  const trigger = elements.ctxMoveTrigger.getBoundingClientRect();
+  const submenu = elements.ctxMoveSubmenu;
+  submenu.classList.add("show");
+
+  const subRect = submenu.getBoundingClientRect();
+  let left = trigger.right + 6;
+  if (left + subRect.width > window.innerWidth - 8) {
+    left = trigger.left - subRect.width - 6;
+  }
+  const maxY = window.innerHeight - subRect.height - 8;
+  submenu.style.left = Math.max(8, left) + "px";
+  submenu.style.top = Math.max(8, Math.min(trigger.top, maxY)) + "px";
+}
+
+function closeMoveSubmenu() {
+  clearTimeout(moveSubmenuOpenTimer);
+  clearTimeout(moveSubmenuCloseTimer);
+  elements.ctxMoveSubmenu.classList.remove("show");
+}
+
+function scheduleMoveSubmenuClose() {
+  clearTimeout(moveSubmenuOpenTimer);
+  clearTimeout(moveSubmenuCloseTimer);
+  moveSubmenuCloseTimer = setTimeout(closeMoveSubmenu, 150);
+}
+
 function renderMoveSection(target) {
   const section = elements.ctxMoveSection;
   const note = target && target.type === "note" ? notes.find((n) => n.id === target.id) : null;
   const folder = target && target.type === "folder" ? getFolder(target.id) : null;
 
   if ((!note && !folder) || !foldersEnabled || folders.length === 0) {
-    section.style.display = "none";
+    elements.ctxMoveTrigger.style.display = "none";
     section.innerHTML = "";
     return;
   }
@@ -1182,17 +1465,15 @@ function renderMoveSection(target) {
     .forEach((f) => options.push({ id: f.id, label: folderPath(f) }));
 
   if (options.length === 0) {
-    section.style.display = "none";
+    elements.ctxMoveTrigger.style.display = "none";
     section.innerHTML = "";
     return;
   }
 
-  section.innerHTML =
-    `<div class="context-menu-label">Move to</div>` +
-    options
-      .map((o) => `<div class="context-menu-item" data-folder-id="${o.id}">${o.id ? FOLDER_ICON : ""}${escapeHTML(o.label)}</div>`)
-      .join("");
-  section.style.display = "block";
+  section.innerHTML = options
+    .map((o) => `<div class="context-menu-item" data-folder-id="${o.id}">${o.id ? FOLDER_ICON : ""}${escapeHTML(o.label)}</div>`)
+    .join("");
+  elements.ctxMoveTrigger.style.display = "flex";
 }
 
 function showContextMenu(x, y, type) {
@@ -1220,6 +1501,7 @@ function showContextMenu(x, y, type) {
 
 function hideContextMenu() {
   elements.contextMenu.classList.remove("show");
+  closeMoveSubmenu();
   contextTarget = null;
 }
 
