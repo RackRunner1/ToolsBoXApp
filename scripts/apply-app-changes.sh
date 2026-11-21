@@ -29,7 +29,7 @@ with open(path, encoding="utf-8") as f:
     raw = f.read()
 
 new = re.sub(
-    r'<a\b[^>]*href="/pages/app\.html"[^>]*>.*?</a\s*>',
+    r'<a\b[^>]*href="/pages/app(?:\.html)?"[^>]*>.*?</a\s*>',
     "",
     raw,
     flags=re.IGNORECASE | re.DOTALL,
