@@ -88,6 +88,7 @@ fn main() {
             2
         }
     };
+    println!();
     std::process::exit(code);
 }
 

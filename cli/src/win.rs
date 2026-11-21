@@ -126,7 +126,12 @@ fn install(prog: &str, op: &str, doc: &str, tag: &str, url: &str) -> i32 {
     bar.set(100);
 
     bar.finish();
-    println!("{TEXT_INDENT}ToolsBoXApp {op} started, the installer will finish in a few seconds.");
+    if op == "update" {
+        println!("{TEXT_INDENT}ToolsBoXApp have been updated on the latest version");
+    }
+    else {
+        println!("{TEXT_INDENT}ToolsBoXApp have been reinstalled on the latest version");
+    }
     0
 }
 
@@ -208,7 +213,7 @@ pub fn uninstall(prog: &str) -> i32 {
     bar.set(100);
 
     bar.finish();
-    println!("{TEXT_INDENT}ToolsBoXApp uninstall started, it will finish in a few seconds.");
+    println!("{TEXT_INDENT}ToolsBoXApp have been uninstalled");
     0
 }
 
