@@ -72,12 +72,21 @@ h1 {
   align-items: center;
   column-gap: 2rem;
   padding: 1.25rem 3rem;
-  background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--glass-border);
+  background: transparent;
   z-index: 1000;
   transition: all 0.3s ease;
+}
+
+.navbar::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 -1.5rem 0;
+  z-index: -1;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 2rem), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 2rem), transparent 100%);
+  pointer-events: none;
 }
 
 .nav-brand {
@@ -128,6 +137,7 @@ h1 {
   position: relative;
   display: flex;
   align-items: center;
+  transition: transform 0.3s ease;
 }
 
 .search-input-wrapper svg {
@@ -148,12 +158,15 @@ h1 {
   transition: all 0.3s ease;
 }
 
+.search-input-wrapper:focus-within {
+  transform: scale(1.02);
+}
+
 .search-input-wrapper input:focus {
   outline: none;
   background: rgba(30, 41, 59, 0.8);
   border-color: var(--primary-color);
   box-shadow: 0 0 15px rgba(59, 130, 246, 0.2);
-  transform: scale(1.02);
 }
 
 .search-dropdown {
