@@ -1,3 +1,56 @@
+<style>
+  /* Logo intro: a 42-frame sprite sheet (30fps, 1.4s) animated in CSS.
+     A sprite is used because WebKit does not decode VP9-alpha video and does
+     not restart animated images (GIF/APNG) on reload. */
+  .nav-brand a {
+    position: relative;
+    display: inline-block;
+    line-height: 0;
+  }
+
+  /* Default state (no JS, reduced motion, stale JS, sprite still loading):
+     show the last frame, which is the full logo. */
+  .nav-logo-intro {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    background-image: url("/.assets/logo/logo-intro-sprite.png");
+    background-repeat: no-repeat;
+    background-size: 4200% 100%;
+    background-position: 100% 0;
+    pointer-events: none;
+  }
+
+  .nav-brand a.intro-playing .nav-logo:not(.nav-logo-intro) {
+    visibility: hidden;
+  }
+
+  .nav-brand a.intro-playing .nav-logo-intro {
+    animation: nav-logo-intro 1.4s steps(41) forwards;
+  }
+
+  @keyframes nav-logo-intro {
+    from {
+      background-position: 0 0;
+    }
+    to {
+      background-position: 100% 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .nav-brand a.intro-playing .nav-logo:not(.nav-logo-intro) {
+      visibility: visible;
+    }
+
+    .nav-brand a.intro-playing .nav-logo-intro {
+      animation: none;
+    }
+  }
+</style>
+
 <nav class="navbar">
   <div class="nav-brand">
     <a href="/">
@@ -5,16 +58,10 @@
         src="/.assets/logo/logo.png"
         alt="TBXM Logo"
         class="nav-logo"
+        width="813"
+        height="366"
       />
-      <video
-        src="/.assets/logo/logo-intro.webm"
-        class="nav-logo nav-logo-intro"
-        muted
-        playsinline
-        preload="auto"
-        aria-hidden="true"
-        hidden
-      ></video>
+      <span class="nav-logo-intro" aria-hidden="true"></span>
     </a>
     <a href="/" class="nav-edition" title="Back to Home" hidden></a>
   </div>
