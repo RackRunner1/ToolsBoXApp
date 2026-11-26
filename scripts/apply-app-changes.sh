@@ -187,4 +187,80 @@ else:
     print("new-year: lede card removed.")
 PYEOF
 
+WEB_DIR="$WEB_DIR" python3 - <<'PYEOF'
+import os
+import re
+
+path = os.path.join(os.environ["WEB_DIR"], "index.html")
+if not os.path.isfile(path):
+    print("(skipped) index.html not found in the web copy.")
+    raise SystemExit(0)
+
+with open(path, encoding="utf-8") as f:
+    raw = f.read()
+
+new = re.sub(
+    r'\s*<script>\s*// Seasonal highlight:.*?</script>\s*',
+    "\n",
+    raw,
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+if new == raw:
+    print("index: no seasonal highlight script found, nothing to do.")
+else:
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(new)
+    print("index: seasonal highlight script removed.")
+PYEOF
+
+WEB_DIR="$WEB_DIR" python3 - <<'PYEOF'
+import os
+import re
+
+path = os.path.join(os.environ["WEB_DIR"], "index.html")
+if not os.path.isfile(path):
+    print("(skipped) index.html not found in the web copy.")
+    raise SystemExit(0)
+
+with open(path, encoding="utf-8") as f:
+    raw = f.read()
+
+new = re.sub(
+    r'\s*<style>\s*html\[data-season="new-year"\].*?</style>\s*',
+    "\n",
+    raw,
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+if new == raw:
+    print("index: no seasonal style block found, nothing to do.")
+else:
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(new)
+    print("index: seasonal style block removed.")
+PYEOF
+
+WEB_DIR="$WEB_DIR" python3 - <<'PYEOF'
+import os
+import re
+
+path = os.path.join(os.environ["WEB_DIR"], "index.html")
+if not os.path.isfile(path):
+    print("(skipped) index.html not found in the web copy.")
+    raise SystemExit(0)
+
+with open(path, encoding="utf-8") as f:
+    raw = f.read()
+
+new = re.sub(r'\s*data-seasonal="new-year"', "", raw)
+
+if new == raw:
+    print("index: no seasonal card marker found, nothing to do.")
+else:
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(new)
+    print("index: seasonal card marker removed.")
+PYEOF
+
 echo "OK: app changes applied"
