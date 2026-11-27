@@ -74,6 +74,10 @@ fn fail(bar: &Progress, message: String) -> i32 {
 fn main() {
     let prog = prog_name();
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let is_version = matches!(
+        args.first().map(String::as_str),
+        Some("-v") | Some("-V") | Some("--version")
+    );
     let code = match args.first().map(String::as_str) {
         Some("update") => cmd_update(&prog),
         Some("reinstall") => cmd_reinstall(&prog),
@@ -88,7 +92,9 @@ fn main() {
             2
         }
     };
-    println!();
+    if !is_version {
+        println!();
+    }
     std::process::exit(code);
 }
 
