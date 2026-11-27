@@ -34,27 +34,36 @@ new Image().src = "/.assets/logo/logo.png";
 new Image().src = LOGO_INTRO_SPRITE;
 
 function playLogoIntro() {
-  const link = document.querySelector(".nav-brand a");
+  const link = document.querySelector(".nav-brand a.nav-logo-link");
   const intro = document.querySelector(".nav-logo-intro");
   if (!link || !intro) return;
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
   let timer;
+  let isPlaying = false;
 
   const play = () => {
-    clearTimeout(timer);
-    // Restart the CSS animation even if the class is already there.
+    if (isPlaying) return; // already animating: do not restart
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    isPlaying = true;
+    // Restart the CSS animation.
     link.classList.remove("intro-playing");
     void link.offsetWidth;
     link.classList.add("intro-playing");
-    timer = setTimeout(
-      () => link.classList.remove("intro-playing"),
-      LOGO_INTRO_DURATION + 50
-    );
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      // At the end of the animation, just show the static logo.
+      link.classList.remove("intro-playing");
+      isPlaying = false;
+    }, LOGO_INTRO_DURATION + 50);
   };
 
-  // Replay the intro animation when the user hovers over the logo.
-  link.addEventListener("mouseenter", play);
+  // Replay the intro animation on hover only when the static logo is shown.
+  link.addEventListener("mouseenter", () => {
+    if (link.classList.contains("intro-playing") || isPlaying) return;
+    play();
+  });
 
   // The static logo stays visible until the sprite is decoded, so the navbar
   // never goes blank while the image loads.
